@@ -20,10 +20,8 @@ def main():
 if __name__ == "__main__":
     main()
 
-
 ===== 文件：app/__init__.py =====
 """MedLabel Review application."""
-
 
 ===== 文件：app/main.py =====
 """Local-first drug-label comparison and review application."""
@@ -477,7 +475,6 @@ def create_app(data_dir=None):
 
 app = create_app()
 
-
 ===== 文件：app/database.py =====
 """SQLite persistence; every mutation and its audit record share a transaction."""
 from contextlib import contextmanager
@@ -568,7 +565,6 @@ def audit(connection, actor, action, entity_type, entity_id, detail):
         "INSERT INTO audit(action,entity_type,entity_id,detail,actor,created_at) VALUES(?,?,?,?,?,?)",
         (action, entity_type, entity_id, encode(detail) if not isinstance(detail, str) else detail, actor, now()),
     )
-
 
 ===== 文件：app/documents.py =====
 """Extract and structure drug leaflets without inferring medical meaning.
@@ -922,7 +918,6 @@ def normalize_sections(sections: list[dict]) -> list[dict]:
         raise ValueError("章节内容不能全部为空")
     return _assign_keys(result)
 
-
 ===== 文件：app/comparison.py =====
 """Deterministic section alignment and review prioritization.
 
@@ -1059,7 +1054,6 @@ def compare_sections(old_sections: list[dict], new_sections: list[dict]) -> dict
             "flags": flags,
         })
     return {"changes": changes, "unchanged_sections": unchanged, "warnings": warnings}
-
 
 ===== 文件：app/static/styles.css =====
 :root {
@@ -3261,7 +3255,6 @@ dialog::backdrop {
   }
 }
 
-
 ===== 文件：app/static/index.html =====
 <!doctype html>
 <html lang="zh-CN">
@@ -3377,7 +3370,6 @@ dialog::backdrop {
     >
   </body>
 </html>
-
 
 ===== 文件：app/static/app.js =====
 /* MedLabel Review — local document review workspace. No remote assets or services. */
@@ -4288,7 +4280,6 @@ document.addEventListener("submit", async (event) => {
 
 navigate();
 
-
 ===== 文件：app/reports.py =====
 """Portable review reports. All human-supplied HTML is escaped on output."""
 
@@ -4478,7 +4469,6 @@ def export_report(comparison: dict, format: str) -> tuple[bytes, str, str]:
         return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8", f"comparison-{safe_id}.json"
     raise ValueError("不支持的导出格式，请选择 html、csv 或 json。")
 
-
 ===== 文件：app/demo.py =====
 """Fictional demonstration material, never real prescribing information."""
 DRUG = {
@@ -4534,4 +4524,3 @@ NEW_TEXT = """模拟示例，不用于临床。以下为虚构说明书，用于
 【说明书修订日期】
 2026-06-01
 """
-

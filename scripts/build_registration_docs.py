@@ -283,7 +283,7 @@ def source_material():
                   'first_display_row': len(rows) + 1}
         raw_count += record['physical_lines']
         nonempty_count += record['nonempty_lines']
-        originals.append(f'===== 文件：{filename} =====\n{text}\n')
+        originals.append(f'===== 文件：{filename} =====\n{text}')
         for n, line in enumerate(original_lines, 1):
             if not line.strip():
                 continue
