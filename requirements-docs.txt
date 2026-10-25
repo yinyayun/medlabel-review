@@ -1,0 +1,3 @@
+-r requirements-dev.txt
+# Additional dependencies for document generation and image sizing.
+Pillow>=11,<13

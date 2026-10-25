@@ -1,0 +1,4537 @@
+===== 文件：run.py =====
+"""Start the local application without a JavaScript build toolchain."""
+import argparse
+from pathlib import Path
+import os
+
+import uvicorn
+
+
+def main():
+    parser = argparse.ArgumentParser(description="MedLabel Review 本地说明书审核工作台")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--data-dir", default=str(Path(__file__).parent / "data"))
+    args = parser.parse_args()
+    os.environ["MEDLABEL_DATA_DIR"] = str(Path(args.data_dir).resolve())
+    uvicorn.run("app.main:app", host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== 文件：app/__init__.py =====
+"""MedLabel Review application."""
+
+
+===== 文件：app/main.py =====
+"""Local-first drug-label comparison and review application."""
+from datetime import date
+import hashlib
+import json
+import os
+from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
+from uuid import uuid4
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.comparison import compare_sections
+from app.database import Database, audit, encode, now
+from app.demo import DRUG, NEW_TEXT, OLD_TEXT
+from app.documents import extract_text, normalize_sections, parse_sections
+from app.reports import export_report
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_TEXT = 300_000
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+class Input(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class DrugInput(Input):
+    name: str = Field(min_length=1, max_length=200)
+    manufacturer: str = Field(default="", max_length=300)
+    specification: str = Field(default="", max_length=300)
+    approval_number: str = Field(default="", max_length=200)
+    notes: str = Field(default="", max_length=3000)
+
+
+class TextVersionInput(Input):
+    label: str = Field(min_length=1, max_length=120)
+    version_date: date
+    source: str = Field(default="", max_length=2000)
+    text: str = Field(min_length=1, max_length=MAX_TEXT)
+
+
+class SectionInput(Input):
+    title: str = Field(min_length=1, max_length=200)
+    text: str = Field(max_length=MAX_TEXT)
+
+
+class SectionsInput(Input):
+    sections: list[SectionInput] = Field(min_length=1, max_length=200)
+
+
+class ComparisonInput(Input):
+    old_version_id: int = Field(gt=0)
+    new_version_id: int = Field(gt=0)
+
+
+class ReviewInput(Input):
+    status: Literal["pending", "confirmed", "ignored"]
+    note: str = Field(default="", max_length=3000)
+    revision: int = Field(ge=0)
+
+
+def required_row(connection, table, entity_id):
+    # Table names are exclusively supplied by internal call sites.
+    if table not in {"drugs", "versions", "changes", "comparisons"}:
+        raise ValueError("Unknown table")
+    row = connection.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "记录不存在")
+    return row
+
+
+def version_data(row, full=False):
+    result = dict(row)
+    sections = json.loads(result.pop("sections"))
+    result.pop("storage_name", None)
+    result["warnings"] = json.loads(result["warnings"])
+    result["section_count"] = len(sections)
+    if full:
+        result["sections"] = sections
+    else:
+        result.pop("text", None)
+    return result
+
+
+def change_data(row):
+    result = json.loads(row["payload"])
+    result.update({key: row[key] for key in ("id", "comparison_id", "status", "note", "reviewer", "reviewed_at", "revision")})
+    return result
+
+
+def comparison_data(connection, entity_id, full=True):
+    row = connection.execute(
+        """SELECT c.*, d.name AS drug_name, ov.label AS old_label, nv.label AS new_label
+        FROM comparisons c JOIN drugs d ON d.id=c.drug_id
+        JOIN versions ov ON ov.id=c.old_version_id
+        JOIN versions nv ON nv.id=c.new_version_id WHERE c.id=?""", (entity_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "比对记录不存在")
+    result = dict(row)
+    result["warnings"] = json.loads(result["warnings"])
+    changes = [change_data(item) for item in connection.execute(
+        "SELECT * FROM changes WHERE comparison_id=? ORDER BY id", (entity_id,)
+    )]
+    result["total_changes"] = len(changes)
+    result["pending_changes"] = sum(item["status"] == "pending" for item in changes)
+    result["status"] = "pending" if result["pending_changes"] else "completed"
+    if full:
+        result["changes"] = changes
+        result["old_version"] = version_data(required_row(connection, "versions", result["old_version_id"]), True)
+        result["new_version"] = version_data(required_row(connection, "versions", result["new_version_id"]), True)
+    return result
+
+
+def add_drug(connection, payload, actor):
+    cursor = connection.execute(
+        "INSERT INTO drugs(name,manufacturer,specification,approval_number,notes,created_at) VALUES(?,?,?,?,?,?)",
+        (payload["name"], payload.get("manufacturer", ""), payload.get("specification", ""),
+         payload.get("approval_number", ""), payload.get("notes", ""), now()),
+    )
+    audit(connection, actor, "创建药品档案", "drug", cursor.lastrowid, {"name": payload["name"]})
+    return cursor.lastrowid
+
+
+def add_version(connection, db, drug_id, label, version_date, source, filename, data, actor, created_files):
+    required_row(connection, "drugs", drug_id)
+    if not label.strip() or len(label.strip()) > 120:
+        raise HTTPException(422, "版本名称须为 1–120 个字符")
+    if len(source) > 2000:
+        raise HTTPException(422, "来源信息不能超过 2000 个字符")
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, "文件不能超过 10 MB")
+    if not data:
+        raise HTTPException(422, "文件不能为空")
+    try:
+        parsed_date = date.fromisoformat(str(version_date)).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(422, "版本日期格式应为 YYYY-MM-DD")
+    clean_filename = Path(filename.replace("\\", "/")).name[:200]
+    if not clean_filename:
+        raise HTTPException(422, "文件名不能为空")
+    try:
+        text = extract_text(clean_filename, data)
+        if len(text) > MAX_TEXT:
+            raise ValueError("文档提取后不能超过 300000 个字符，请拆分文档")
+        sections = parse_sections(text)
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+    warnings = []
+    if len(sections) == 1:
+        warnings.append("仅识别到一个章节，请在开始比对前核对章节划分。")
+    storage_name = uuid4().hex + Path(clean_filename).suffix.lower()
+    path = db.uploads / storage_name
+    path.write_bytes(data)
+    created_files.append(path)
+    digest = hashlib.sha256(data).hexdigest()
+    cursor = connection.execute(
+        """INSERT INTO versions(drug_id,label,version_date,source,filename,sha256,storage_name,
+        text,sections,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (drug_id, label.strip(), parsed_date, source.strip(), clean_filename, digest, storage_name,
+         text, encode(sections), encode(warnings), now()),
+    )
+    audit(connection, actor, "导入说明书版本", "version", cursor.lastrowid,
+          {"drug_id": drug_id, "label": label.strip(), "filename": clean_filename, "sha256": digest})
+    return cursor.lastrowid
+
+
+def add_comparison(connection, old_id, new_id, actor):
+    if old_id == new_id:
+        raise HTTPException(422, "请选择两个不同版本")
+    old = required_row(connection, "versions", old_id)
+    new = required_row(connection, "versions", new_id)
+    if old["drug_id"] != new["drug_id"]:
+        raise HTTPException(422, "只能比对同一药品档案下的版本")
+    if old["version_date"] > new["version_date"]:
+        raise HTTPException(422, "旧版本日期不能晚于新版本日期")
+    try:
+        diff = compare_sections(json.loads(old["sections"]), json.loads(new["sections"]))
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+    cursor = connection.execute(
+        """INSERT INTO comparisons(drug_id,old_version_id,new_version_id,unchanged_sections,warnings,created_at)
+        VALUES(?,?,?,?,?,?)""", (old["drug_id"], old_id, new_id, diff["unchanged_sections"], encode(diff.get("warnings", [])), now())
+    )
+    comparison_id = cursor.lastrowid
+    for change in diff["changes"]:
+        connection.execute("INSERT INTO changes(comparison_id,payload) VALUES(?,?)", (comparison_id, encode(change)))
+    audit(connection, actor, "创建版本比对", "comparison", comparison_id,
+          {"old_version_id": old_id, "new_version_id": new_id, "changes": len(diff["changes"])})
+    return comparison_id
+
+
+def create_app(data_dir=None):
+    application = FastAPI(
+        title="药品说明书版本比对与变更审核系统", version="1.0.0",
+        description="本地单操作员版本比对工具。输出用于人工复核，不判断医学正确性。",
+    )
+    db = Database(data_dir or os.environ.get("MEDLABEL_DATA_DIR", "data"))
+    actor = os.environ.get("MEDLABEL_REVIEWER", "本地审核员").strip()[:200] or "本地审核员"
+    allowed_hosts = {"localhost", "127.0.0.1", "::1"}
+    # TestClient's synthetic hostname is only enabled for explicit app factories.
+    if data_dir is not None:
+        allowed_hosts.add("testserver")
+    allowed_hosts.update(host.strip().lower() for host in os.environ.get("MEDLABEL_ALLOWED_HOSTS", "").split(",") if host.strip())
+    application.state.db = db
+    application.state.reviewer = actor
+
+    @application.middleware("http")
+    async def guard_requests(request: Request, call_next):
+        # DNS rebinding must not make an attacker's origin a trusted local UI.
+        host = request.headers.get("host", "")
+        try:
+            authority = urlsplit("//" + host)
+            host_port = authority.port or (443 if request.url.scheme == "https" else 80)
+            if authority.username or authority.password or authority.path or authority.query or authority.fragment:
+                raise ValueError("Invalid authority")
+            if (authority.hostname or "").lower() not in allowed_hosts:
+                return JSONResponse({"detail": "不允许的访问主机，请使用 localhost 或 127.0.0.1"}, status_code=400)
+        except ValueError:
+            return JSONResponse({"detail": "无效的访问主机"}, status_code=400)
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if request.headers.get("X-Requested-With") != "MedLabelReview":
+                return JSONResponse({"detail": "请求缺少本地应用校验头"}, status_code=403)
+            origin = request.headers.get("origin")
+            if origin:
+                try:
+                    parsed_origin = urlsplit(origin)
+                    origin_port = parsed_origin.port or (443 if parsed_origin.scheme == "https" else 80)
+                    same_origin = (parsed_origin.scheme == request.url.scheme
+                                   and parsed_origin.hostname == authority.hostname
+                                   and origin_port == host_port
+                                   and not parsed_origin.username and not parsed_origin.password
+                                   and not parsed_origin.path and not parsed_origin.query and not parsed_origin.fragment)
+                except ValueError:
+                    same_origin = False
+                if not same_origin:
+                    return JSONResponse({"detail": "不允许跨来源修改本地数据"}, status_code=403)
+            length = request.headers.get("content-length")
+            if length:
+                try:
+                    if int(length) > MAX_FILE_SIZE + 256 * 1024:
+                        return JSONResponse({"detail": "请求内容过大，文件不能超过 10 MB"}, status_code=413)
+                except ValueError:
+                    return JSONResponse({"detail": "无效的请求长度"}, status_code=400)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        fields = [".".join(str(part) for part in item["loc"]) for item in error.errors()]
+        return JSONResponse({"detail": "输入格式不正确，请检查：" + "、".join(fields)}, status_code=422)
+
+    @application.get("/api/health")
+    def health():
+        return {"status": "ok", "version": "1.0.0", "mode": "local-single-operator", "reviewer": actor}
+
+    @application.get("/api/dashboard")
+    def dashboard():
+        with db.connect() as connection:
+            result = {table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                      for table in ("drugs", "versions", "comparisons")}
+            result["pending_changes"] = connection.execute("SELECT COUNT(*) FROM changes WHERE status='pending'").fetchone()[0]
+            result["recent_activity"] = [dict(row) for row in connection.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 8")]
+            return result
+
+    @application.get("/api/drugs")
+    def list_drugs():
+        with db.connect() as connection:
+            return [dict(row) for row in connection.execute(
+                "SELECT d.*, (SELECT COUNT(*) FROM versions v WHERE v.drug_id=d.id) AS version_count FROM drugs d ORDER BY d.id DESC")]
+
+    @application.post("/api/drugs", status_code=201)
+    def create_drug(payload: DrugInput):
+        with db.connect(write=True) as connection:
+            entity_id = add_drug(connection, payload.model_dump(), actor)
+            result = dict(required_row(connection, "drugs", entity_id))
+            result["version_count"] = 0
+            return result
+
+    @application.get("/api/drugs/{drug_id}")
+    def get_drug(drug_id: int):
+        with db.connect() as connection:
+            result = dict(required_row(connection, "drugs", drug_id))
+            result["version_count"] = connection.execute("SELECT COUNT(*) FROM versions WHERE drug_id=?", (drug_id,)).fetchone()[0]
+            return result
+
+    @application.get("/api/drugs/{drug_id}/versions")
+    def list_versions(drug_id: int):
+        with db.connect() as connection:
+            required_row(connection, "drugs", drug_id)
+            return [version_data(row) for row in connection.execute(
+                "SELECT * FROM versions WHERE drug_id=? ORDER BY version_date DESC,id DESC", (drug_id,))]
+
+    @application.post("/api/drugs/{drug_id}/versions", status_code=201)
+    async def upload_version(drug_id: int, file: UploadFile = File(...), label: str = Form(...),
+                             version_date: str = Form(...), source: str = Form("")):
+        created_files = []
+        try:
+            data = await file.read(MAX_FILE_SIZE + 1)
+            with db.connect(write=True) as connection:
+                entity_id = add_version(connection, db, drug_id, label, version_date, source,
+                                        file.filename or "", data, actor, created_files)
+                return version_data(required_row(connection, "versions", entity_id), True)
+        except Exception:
+            for path in created_files:
+                path.unlink(missing_ok=True)
+            raise
+        finally:
+            await file.close()
+
+    @application.post("/api/drugs/{drug_id}/versions/text", status_code=201)
+    def text_version(drug_id: int, payload: TextVersionInput):
+        created_files = []
+        try:
+            with db.connect(write=True) as connection:
+                entity_id = add_version(connection, db, drug_id, payload.label, payload.version_date,
+                                        payload.source, "pasted-text.txt", payload.text.encode("utf-8"), actor, created_files)
+                return version_data(required_row(connection, "versions", entity_id), True)
+        except Exception:
+            for path in created_files:
+                path.unlink(missing_ok=True)
+            raise
+
+    @application.get("/api/versions/{version_id}")
+    def get_version(version_id: int):
+        with db.connect() as connection:
+            return version_data(required_row(connection, "versions", version_id), True)
+
+    @application.get("/api/versions/{version_id}/file")
+    def download_version(version_id: int):
+        with db.connect() as connection:
+            row = required_row(connection, "versions", version_id)
+            path = (db.uploads / row["storage_name"]).resolve()
+            if path.parent != db.uploads.resolve() or not path.is_file():
+                raise HTTPException(404, "原始文件不存在")
+            return FileResponse(path, filename=row["filename"], media_type="application/octet-stream")
+
+    @application.put("/api/versions/{version_id}/sections")
+    def update_sections(version_id: int, payload: SectionsInput):
+        if sum(len(item.title) + len(item.text) for item in payload.sections) > MAX_TEXT:
+            raise HTTPException(422, "章节总长度不能超过 300000 个字符")
+        with db.connect(write=True) as connection:
+            row = required_row(connection, "versions", version_id)
+            linked = connection.execute("SELECT id FROM comparisons WHERE old_version_id=? OR new_version_id=? LIMIT 1",
+                                        (version_id, version_id)).fetchone()
+            if linked:
+                raise HTTPException(409, "此版本已用于比对，不能修改章节。请导入一个新版本进行校正。")
+            try:
+                sections = normalize_sections([item.model_dump() for item in payload.sections])
+            except ValueError as error:
+                raise HTTPException(422, str(error))
+            for item in sections:
+                item["start_line"] = None
+                item["end_line"] = None
+            warnings = ["章节经人工校正；原始文件和提取原文保持不变，章节位置不再等同于原文行号。"]
+            connection.execute("UPDATE versions SET sections=?,warnings=? WHERE id=?", (encode(sections), encode(warnings), version_id))
+            audit(connection, actor, "校正章节", "version", version_id,
+                  {"before": json.loads(row["sections"]), "after": sections})
+            return version_data(required_row(connection, "versions", version_id), True)
+
+    @application.get("/api/comparisons")
+    def list_comparisons():
+        with db.connect() as connection:
+            ids = [row[0] for row in connection.execute("SELECT id FROM comparisons ORDER BY id DESC")]
+            return [comparison_data(connection, entity_id, False) for entity_id in ids]
+
+    @application.post("/api/comparisons", status_code=201)
+    def create_comparison(payload: ComparisonInput):
+        with db.connect(write=True) as connection:
+            entity_id = add_comparison(connection, payload.old_version_id, payload.new_version_id, actor)
+            return comparison_data(connection, entity_id)
+
+    @application.get("/api/comparisons/{comparison_id}")
+    def get_comparison(comparison_id: int):
+        with db.connect() as connection:
+            return comparison_data(connection, comparison_id)
+
+    @application.patch("/api/changes/{change_id}")
+    def review_change(change_id: int, payload: ReviewInput):
+        if payload.status == "ignored" and not payload.note:
+            raise HTTPException(422, "忽略差异时必须填写原因")
+        with db.connect(write=True) as connection:
+            current = required_row(connection, "changes", change_id)
+            if current["revision"] != payload.revision:
+                raise HTTPException(409, "此差异已被更新，请刷新后重新审核")
+            timestamp = now()
+            connection.execute(
+                "UPDATE changes SET status=?,note=?,reviewer=?,reviewed_at=?,revision=revision+1 WHERE id=? AND revision=?",
+                (payload.status, payload.note, actor, timestamp, change_id, payload.revision),
+            )
+            audit(connection, actor, "审核变更", "change", change_id,
+                  {"comparison_id": current["comparison_id"], "before": {"status": current["status"], "note": current["note"]},
+                   "after": {"status": payload.status, "note": payload.note}, "revision": payload.revision + 1})
+            return change_data(required_row(connection, "changes", change_id))
+
+    @application.get("/api/audit")
+    def list_audit():
+        with db.connect() as connection:
+            return [dict(row) for row in connection.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 500")]
+
+    @application.get("/api/comparisons/{comparison_id}/export")
+    def export_comparison(comparison_id: int, format: Literal["html", "csv", "json"] = "html"):
+        with db.connect() as connection:
+            comparison = comparison_data(connection, comparison_id)
+        body, media_type, filename = export_report(comparison, format)
+        return Response(body, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @application.post("/api/demo")
+    def seed_demo():
+        created_files = []
+        try:
+            with db.connect(write=True) as connection:
+                seeded = connection.execute("SELECT value FROM settings WHERE key='demo'").fetchone()
+                if seeded:
+                    return json.loads(seeded[0])
+                drug_id = add_drug(connection, DRUG, actor)
+                old_id = add_version(connection, db, drug_id, "模拟初始版", "2026-01-01", "项目内置虚构示例，不用于临床",
+                                     "demo-v1.txt", OLD_TEXT.encode("utf-8"), actor, created_files)
+                new_id = add_version(connection, db, drug_id, "模拟修订版", "2026-06-01", "项目内置虚构示例，不用于临床",
+                                     "demo-v2.txt", NEW_TEXT.encode("utf-8"), actor, created_files)
+                comparison_id = add_comparison(connection, old_id, new_id, actor)
+                result = {"drug_id": drug_id, "comparison_id": comparison_id}
+                connection.execute("INSERT INTO settings(key,value) VALUES('demo',?)", (encode(result),))
+                return result
+        except Exception:
+            for path in created_files:
+                path.unlink(missing_ok=True)
+            raise
+
+    @application.get("/", include_in_schema=False)
+    def index():
+        path = STATIC_DIR / "index.html"
+        if not path.exists():
+            raise HTTPException(503, "界面文件尚未安装")
+        return FileResponse(path)
+
+    application.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
+    return application
+
+
+app = create_app()
+
+
+===== 文件：app/database.py =====
+"""SQLite persistence; every mutation and its audit record share a transaction."""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sqlite3
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def encode(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS drugs (
+ id INTEGER PRIMARY KEY, name TEXT NOT NULL, manufacturer TEXT NOT NULL DEFAULT '',
+ specification TEXT NOT NULL DEFAULT '', approval_number TEXT NOT NULL DEFAULT '',
+ notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS versions (
+ id INTEGER PRIMARY KEY, drug_id INTEGER NOT NULL REFERENCES drugs(id),
+ label TEXT NOT NULL, version_date TEXT NOT NULL, source TEXT NOT NULL DEFAULT '',
+ filename TEXT NOT NULL, sha256 TEXT NOT NULL, storage_name TEXT NOT NULL,
+ text TEXT NOT NULL, sections TEXT NOT NULL, warnings TEXT NOT NULL DEFAULT '[]',
+ created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS comparisons (
+ id INTEGER PRIMARY KEY, drug_id INTEGER NOT NULL REFERENCES drugs(id),
+ old_version_id INTEGER NOT NULL REFERENCES versions(id),
+ new_version_id INTEGER NOT NULL REFERENCES versions(id),
+ unchanged_sections INTEGER NOT NULL, warnings TEXT NOT NULL DEFAULT '[]',
+ created_at TEXT NOT NULL,
+ CHECK(old_version_id != new_version_id)
+);
+CREATE TABLE IF NOT EXISTS changes (
+ id INTEGER PRIMARY KEY, comparison_id INTEGER NOT NULL REFERENCES comparisons(id),
+ payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending'
+ CHECK(status IN ('pending','confirmed','ignored')),
+ note TEXT NOT NULL DEFAULT '', reviewer TEXT NOT NULL DEFAULT '',
+ reviewed_at TEXT, revision INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS audit (
+ id INTEGER PRIMARY KEY, action TEXT NOT NULL, entity_type TEXT NOT NULL,
+ entity_id INTEGER NOT NULL, detail TEXT NOT NULL, actor TEXT NOT NULL,
+ created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS versions_drug ON versions(drug_id);
+CREATE INDEX IF NOT EXISTS changes_comparison ON changes(comparison_id);
+CREATE INDEX IF NOT EXISTS comparisons_versions ON comparisons(old_version_id,new_version_id);
+"""
+
+
+class Database:
+    def __init__(self, data_dir):
+        self.directory = Path(data_dir).resolve()
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.uploads = self.directory / "uploads"
+        self.uploads.mkdir(exist_ok=True)
+        self.path = self.directory / "medlabel.sqlite3"
+        with self.connect() as connection:
+            connection.executescript(SCHEMA)
+
+    @contextmanager
+    def connect(self, write=False):
+        connection = sqlite3.connect(self.path, timeout=15)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        try:
+            if write:
+                connection.execute("BEGIN IMMEDIATE")
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+
+def audit(connection, actor, action, entity_type, entity_id, detail):
+    connection.execute(
+        "INSERT INTO audit(action,entity_type,entity_id,detail,actor,created_at) VALUES(?,?,?,?,?,?)",
+        (action, entity_type, entity_id, encode(detail) if not isinstance(detail, str) else detail, actor, now()),
+    )
+
+
+===== 文件：app/documents.py =====
+"""Extract and structure drug leaflets without inferring medical meaning.
+
+Only user supplied text is processed.  The original file/text is retained by the
+API; these sections are a reviewable representation, never a replacement source.
+"""
+
+from __future__ import annotations
+
+import io
+import re
+import unicodedata
+import zipfile
+from collections import Counter
+from pathlib import PurePath
+
+
+MAX_FILE_BYTES = 10 * 1024 * 1024
+MAX_TEXT_CHARS = 1_000_000
+MAX_PDF_PAGES = 100
+MAX_SECTIONS = 500
+MAX_DOCX_EXPANDED = 40 * 1024 * 1024
+
+# Alias matching is deliberately conservative.  Similar clinical concepts must
+# not be merged simply because a fuzzy text matcher considers their names close.
+_ALIASES = {
+    "药品名称": "药品名称", "药物名称": "药品名称",
+    "成份": "成份", "成分": "成份", "主要成份": "成份", "主要成分": "成份",
+    "性状": "性状", "适应症": "适应症", "适应证": "适应症",
+    "功能主治": "功能主治", "规格": "规格", "用法用量": "用法用量",
+    "用法与用量": "用法用量", "用法及用量": "用法用量",
+    "不良反应": "不良反应", "禁忌": "禁忌", "禁忌症": "禁忌",
+    "禁忌证": "禁忌", "注意事项": "注意事项", "警告": "警告",
+    "警示语": "警告", "警示": "警告", "黑框警告": "黑框警告",
+    "孕妇及哺乳期妇女用药": "孕妇及哺乳期妇女用药",
+    "孕妇和哺乳期妇女用药": "孕妇及哺乳期妇女用药",
+    "孕妇及哺乳期用药": "孕妇及哺乳期妇女用药",
+    "儿童用药": "儿童用药", "老年用药": "老年用药", "老年患者用药": "老年用药",
+    "特殊人群用药": "特殊人群用药", "药物相互作用": "药物相互作用",
+    "药物过量": "药物过量", "临床试验": "临床试验",
+    "药理毒理": "药理毒理", "药理作用": "药理作用", "毒理研究": "毒理研究",
+    "药代动力学": "药代动力学", "贮藏": "贮藏", "储藏": "贮藏",
+    "包装": "包装", "有效期": "有效期", "执行标准": "执行标准",
+    "批准文号": "批准文号", "药品批准文号": "批准文号",
+    "上市许可持有人": "上市许可持有人", "药品上市许可持有人": "上市许可持有人",
+    "生产企业": "生产企业", "生产厂家": "生产企业",
+    "核准日期": "核准日期", "修改日期": "修改日期", "修订日期": "修改日期",
+}
+_BRACKET_HEADING = re.compile(r"^\s*(?:【([^】\n]{1,60})】|\[([^\]\n]{1,60})\]|［([^］\n]{1,60})］)\s*[:：]?\s*(.*)$")
+_NUMBER_PREFIX = re.compile(r"^\s*(?:(?:[一二三四五六七八九十百]+|\d+)[、.．]\s*|[（(](?:[一二三四五六七八九十百]+|\d+)[）)]\s*)")
+
+
+def _clean_text(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\ufeff", "")
+    if "\x00" in text:
+        raise ValueError("文档包含二进制或空字符，请转换为文字版文件后重试")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ValueError("文档文字超过 100 万字符，请拆分为单份药品说明书")
+    if not text.strip():
+        raise ValueError("未提取到可用文字；扫描件需要先进行 OCR 并人工核对")
+    return text
+
+
+def _pdf_contains_image(page, reader) -> bool:
+    """Inspect resource graphs and parsed operators, never text-density guesses.
+
+    PDF images can coexist with a tiny text layer (for example only a page
+    number), be nested in Form XObjects, or be embedded as inline images. V1
+    deliberately rejects all such pages, including otherwise harmless logos.
+    """
+    from pypdf.generic import ContentStream
+
+    seen_resources: set[int] = set()
+    seen_streams: set[int] = set()
+
+    def resolve(value):
+        return value.get_object() if hasattr(value, "get_object") else value
+
+    def inspect(stream, resources, depth=0):
+        if depth > 32 or len(seen_resources) + len(seen_streams) > 2000:
+            raise ValueError("PDF 图形结构过于复杂，无法确认文字完整性；请转换为完整文字并核对")
+        stream = resolve(stream)
+        resources = resolve(resources) if resources else {}
+        if stream is not None and id(stream) not in seen_streams:
+            seen_streams.add(id(stream))
+            parsed = stream if isinstance(stream, ContentStream) else ContentStream(stream, reader)
+            if any(operator == b"INLINE IMAGE" for _, operator in parsed.operations):
+                return True
+        if id(resources) in seen_resources:
+            return False
+        seen_resources.add(id(resources))
+        for category in ("/XObject", "/Pattern"):
+            objects = resolve(resources.get(category, {}))
+            for reference in objects.values():
+                obj = resolve(reference)
+                if obj.get("/Subtype") == "/Image":
+                    return True
+                if obj.get("/Subtype") == "/Form" or obj.get("/PatternType") == 1:
+                    if inspect(obj, obj.get("/Resources", resources), depth + 1):
+                        return True
+        return False
+
+    resources = page.get("/Resources", {})
+    if inspect(page.get_contents(), resources):
+        return True
+    # Annotation appearance streams may also contain images not referenced by
+    # the main page content stream (for example a scanned stamp or attachment).
+    for reference in resolve(page.get("/Annots", [])):
+        annotation = resolve(reference)
+        appearances = resolve(annotation.get("/AP", {}))
+        for appearance in appearances.values():
+            appearance = resolve(appearance)
+            candidates = [appearance] if hasattr(appearance, "get_data") else [resolve(value) for value in appearance.values()]
+            for candidate in candidates:
+                if inspect(candidate, candidate.get("/Resources", resources)):
+                    return True
+    return False
+
+
+def _pdf_text(data: bytes) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(data), strict=False)
+    if reader.is_encrypted:
+        raise ValueError("PDF 已加密，请提供解密后的文字版 PDF")
+    if len(reader.pages) > MAX_PDF_PAGES:
+        raise ValueError("PDF 超过 100 页，请拆分为单份药品说明书")
+    texts: list[str] = []
+    length = 0
+    for index, page in enumerate(reader.pages, start=1):
+        if _pdf_contains_image(page, reader):
+            raise ValueError(f"此 PDF 含图片内容，可能遗漏文字；请先转换为完整文字并核对（第 {index} 页）")
+        text = page.extract_text() or ""
+        if text.strip():
+            texts.append(text)
+            length += len(text) + 2
+        if length > MAX_TEXT_CHARS:
+            raise ValueError("文档文字超过 100 万字符，请拆分为单份药品说明书")
+    return "\n\n".join(texts)
+
+
+def _docx_text(data: bytes) -> str:
+    from docx import Document
+    from docx.oxml.ns import qn
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        members = archive.infolist()
+        if len(members) > 2500 or sum(member.file_size for member in members) > MAX_DOCX_EXPANDED:
+            raise ValueError("DOCX 解压后体积或文件数量过大，请简化文件后重试")
+        if any(member.flag_bits & 1 for member in members):
+            raise ValueError("不支持加密的 DOCX 文件")
+        if any(member.file_size > 1024 * 1024 and member.file_size / max(member.compress_size, 1) > 200 for member in members):
+            raise ValueError("DOCX 压缩比例异常，请重新保存为普通文档")
+        if "word/document.xml" not in archive.namelist():
+            raise ValueError("文件不是有效的 DOCX 文档")
+
+    document = Document(io.BytesIO(data))
+    headers, footers = [], []
+    seen_parts: set[str] = set()
+    for relation in document.part.rels.values():
+        if relation.is_external or not relation.reltype.endswith(("/header", "/footer")):
+            continue
+        part = relation.target_part
+        if str(part.partname) in seen_parts:
+            continue
+        seen_parts.add(str(part.partname))
+        (headers if relation.reltype.endswith("/header") else footers).append(part.element)
+    roots = headers + [document.element.body] + footers
+    for root in roots:
+        if root.xpath(".//w:footnoteReference | .//w:endnoteReference"):
+            raise ValueError("DOCX 含脚注或尾注，请先转换为包含全部文字的 TXT，避免遗漏")
+        if root.xpath(".//w:ins | .//w:del"):
+            raise ValueError("DOCX 含未处理的修订记录，请确认修订后重新上传")
+    # Iterate paragraphs in XML document order. This includes paragraphs inside
+    # table cells and text boxes, which Document.paragraphs alone would omit.
+    paragraphs: list[str] = []
+    for root in roots:
+        if root in headers:
+            paragraphs.append("【页眉内容】")
+        elif root in footers:
+            paragraphs.append("【页脚内容】")
+        for paragraph in root.iter(qn("w:p")):
+            fragments: list[str] = []
+            for node in paragraph.iter():
+                # Text-box paragraphs are visited in their own iteration; skip
+                # their text here to avoid duplication in the outer paragraph.
+                parent = node.getparent()
+                in_nested_paragraph = False
+                while parent is not None and parent is not paragraph:
+                    if parent.tag == qn("w:p"):
+                        in_nested_paragraph = True
+                        break
+                    parent = parent.getparent()
+                if in_nested_paragraph:
+                    continue
+                if node.tag == qn("w:t") and node.text:
+                    fragments.append(node.text)
+                elif node.tag == qn("w:tab"):
+                    fragments.append("\t")
+                elif node.tag in {qn("w:br"), qn("w:cr")}:
+                    fragments.append("\n")
+            paragraphs.append("".join(fragments))
+    return "\n".join(paragraphs)
+
+
+def extract_text(filename: str, data: bytes) -> str:
+    """Extract a supported document or raise a user-facing ``ValueError``.
+
+    Filenames are used only to select format, never as filesystem destinations.
+    Size checks are duplicated here so callers other than HTTP cannot bypass them.
+    """
+    if not isinstance(data, bytes) or not data:
+        raise ValueError("文件为空，请选择包含文字的文件")
+    if len(data) > MAX_FILE_BYTES:
+        raise ValueError("文件超过 10 MB，请压缩或拆分后重试")
+    extension = PurePath(filename.replace("\\", "/")).suffix.lower()
+    try:
+        if extension == ".txt":
+            text = None
+            for encoding in ("utf-8-sig", "gb18030"):
+                try:
+                    text = data.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    pass
+            if text is None:
+                raise ValueError("TXT 编码无法识别，请另存为 UTF-8")
+        elif extension == ".pdf":
+            if not data.lstrip().startswith(b"%PDF-"):
+                raise ValueError("文件内容不是有效的 PDF")
+            text = _pdf_text(data)
+        elif extension == ".docx":
+            text = _docx_text(data)
+        else:
+            raise ValueError("仅支持 TXT、文字版 PDF 和 DOCX 文件；旧版 DOC 请另存为 DOCX")
+        return _clean_text(text)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("文档无法解析，可能已损坏或格式不匹配；请重新导出为文字版文件") from exc
+
+
+def canonical_title(title: str) -> str:
+    """Normalize only heading formatting and explicitly documented aliases."""
+    normalized = unicodedata.normalize("NFKC", title).strip().strip("【】[]［］:： ")
+    normalized = _NUMBER_PREFIX.sub("", normalized)
+    compact = re.sub(r"\s+", "", normalized)
+    return _ALIASES.get(compact, compact or "未命名章节")
+
+
+def _heading(line: str) -> tuple[str, str] | None:
+    match = _BRACKET_HEADING.match(line)
+    if match:
+        title = next(part for part in match.groups()[:3] if part is not None).strip()
+        # [1] at the start of a reference paragraph is not a section title.
+        if re.fullmatch(r"[\d\W_]+", title):
+            return None
+        return title, match.group(4)
+    stripped = _NUMBER_PREFIX.sub("", line.strip())
+    # Unbracketed headings must exactly match a known heading, or be followed
+    # by a colon. Arbitrary short body sentences are never promoted to headings.
+    title, separator, remainder = stripped.partition("：")
+    if not separator:
+        title, separator, remainder = stripped.partition(":")
+    compact = re.sub(r"\s+", "", title)
+    if compact in _ALIASES:
+        return title.strip(), remainder.strip() if separator else ""
+    return None
+
+
+def _assign_keys(sections: list[dict]) -> list[dict]:
+    counts: Counter[str] = Counter()
+    for section in sections:
+        # Reserve ASCII '#' for the occurrence suffix; literal title characters
+        # must not collide with generated keys such as 成份#2.
+        canonical = canonical_title(section["title"]).replace("#", "＃")
+        counts[canonical] += 1
+        section["key"] = canonical if counts[canonical] == 1 else f"{canonical}#{counts[canonical]}"
+    return sections
+
+
+def parse_sections(text: str) -> list[dict]:
+    """Split sections, preserving preamble, duplicates, and source line ranges.
+
+    Line numbers refer to extracted text, not PDF page layout. Unknown bracketed
+    headings remain separate sections. Unstructured documents become one 全文
+    section so content cannot silently disappear.
+    """
+    text = _clean_text(text)
+    lines = text.split("\n")
+    sections: list[dict] = []
+    current: dict | None = None
+    buffer: list[str] = []
+
+    def flush(end_line: int) -> None:
+        if current is None:
+            return
+        current["text"] = "\n".join(buffer).strip()
+        current["end_line"] = max(current["start_line"], end_line)
+        sections.append(current)
+
+    for number, line in enumerate(lines, start=1):
+        heading = _heading(line)
+        if heading is not None:
+            flush(number - 1)
+            title, remainder = heading
+            current = {"title": title, "start_line": number}
+            buffer = [remainder] if remainder else []
+        else:
+            if current is None:
+                if not line.strip():
+                    continue
+                current = {"title": "前言", "start_line": number}
+            buffer.append(line)
+    flush(len(lines))
+    if len(sections) == 1 and sections[0]["title"] == "前言":
+        sections[0]["title"] = "全文"
+    if len(sections) > MAX_SECTIONS:
+        raise ValueError("章节数量超过 500，请检查文件格式或拆分文档")
+    return _assign_keys(sections)
+
+
+def normalize_sections(sections: list[dict]) -> list[dict]:
+    """Validate a manual section correction and regenerate stable keys.
+
+    Source line numbers are intentionally cleared: manual corrections cannot
+    honestly claim exact correspondence with extraction line positions.
+    """
+    if not isinstance(sections, list) or not sections:
+        raise ValueError("至少保留一个章节")
+    if len(sections) > MAX_SECTIONS:
+        raise ValueError("章节数量不能超过 500")
+    result: list[dict] = []
+    total = 0
+    for section in sections:
+        if not isinstance(section, dict):
+            raise ValueError("章节格式错误")
+        title = section.get("title")
+        text = section.get("text")
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 120:
+            raise ValueError("章节标题应为 1 至 120 个字符")
+        if not isinstance(text, str) or "\x00" in text:
+            raise ValueError("章节内容应为有效文本")
+        text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        total += len(text)
+        result.append({"title": title.strip(), "text": text, "start_line": None, "end_line": None})
+    if total > MAX_TEXT_CHARS:
+        raise ValueError("章节文字总量不能超过 100 万字符")
+    if not any(section["text"] for section in result):
+        raise ValueError("章节内容不能全部为空")
+    return _assign_keys(result)
+
+
+===== 文件：app/comparison.py =====
+"""Deterministic section alignment and review prioritization.
+
+Priority and flags identify textual review tasks, not clinical risk or a medical
+recommendation. Inline segments are raw text and MUST be escaped by renderers.
+"""
+
+from __future__ import annotations
+
+import re
+from collections import Counter
+from difflib import SequenceMatcher
+
+from .documents import canonical_title
+
+
+_IMPORTANT_SECTIONS = {
+    "用法用量", "禁忌", "不良反应", "注意事项", "警告", "黑框警告",
+    "孕妇及哺乳期妇女用药", "儿童用药", "老年用药", "特殊人群用药",
+    "药物相互作用", "药物过量", "适应症", "功能主治",
+}
+_NUMBER = re.compile(r"(?<![A-Za-z0-9.])[-+]?\d+(?:[.,]\d+)*(?:\s*[%％])?")
+_UNIT = re.compile(r"(?<![A-Za-z])(?:mcg|μg|µg|mg|kg|g|mL|ml|L|IU|mmol|mol|μL|µL|℃|°C|毫克|微克|克|毫升|升|单位|片|粒|支|袋|滴)(?![A-Za-z])", re.IGNORECASE)
+
+
+def _comparison_text(text: str) -> str:
+    """Ignore layout whitespace without merging distinct numeric tokens.
+
+    In particular '1 0 mg' never becomes '10 mg'; decimal points, units,
+    punctuation and negation remain significant.
+    """
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"(?<=[\u3400-\u9fff]) +(?=[\u3400-\u9fff])", "", text)
+    return text
+
+
+def _indexed(sections: list[dict]) -> tuple[dict[str, dict], list[str]]:
+    counts: Counter[str] = Counter()
+    result: dict[str, dict] = {}
+    order: list[str] = []
+    # Recompute keys from headings rather than trusting mutable caller keys.
+    for section in sections:
+        title = canonical_title(section["title"]).replace("#", "＃")
+        counts[title] += 1
+        key = title if counts[title] == 1 else f"{title}#{counts[title]}"
+        result[key] = section
+        order.append(key)
+    return result, order
+
+
+def _location(section: dict | None) -> str:
+    if section is None:
+        return "无对应章节"
+    start, end = section.get("start_line"), section.get("end_line")
+    if not isinstance(start, int) or not isinstance(end, int):
+        return "手工校正章节"
+    return f"提取文本第 {start} 行" if start == end else f"提取文本第 {start}–{end} 行"
+
+
+def _inline_segments(old: str, new: str) -> tuple[list[dict], bool]:
+    if not old:
+        return ([{"op": "insert", "text": new}] if new else []), False
+    if not new:
+        return [{"op": "delete", "text": old}], False
+    # Character-level matching is useful for Chinese units and negations, but
+    # huge or pathological strings need a bounded whole-section fallback.
+    if len(old) + len(new) > 30_000:
+        return [{"op": "delete", "text": old}, {"op": "insert", "text": new}], True
+    matcher = SequenceMatcher(None, old, new, autojunk=True)
+    segments: list[dict] = []
+    for op, a_start, a_end, b_start, b_end in matcher.get_opcodes():
+        if op == "equal":
+            segments.append({"op": "equal", "text": old[a_start:a_end]})
+        else:
+            if op in {"delete", "replace"}:
+                segments.append({"op": "delete", "text": old[a_start:a_end]})
+            if op in {"insert", "replace"}:
+                segments.append({"op": "insert", "text": new[b_start:b_end]})
+    return segments, False
+
+
+def compare_sections(old_sections: list[dict], new_sections: list[dict]) -> dict:
+    """Compare each canonical heading, pairing repeated headings by occurrence.
+
+    Reordering alone is reported as a warning, not falsely presented as new
+    clinical content. Differences are returned in new-document order, followed
+    by removed sections in old-document order.
+    """
+    old_map, old_order = _indexed(old_sections)
+    new_map, new_order = _indexed(new_sections)
+    warnings: list[str] = []
+    if any("#" in key for key in old_order + new_order):
+        warnings.append("存在重复标题，已按同名章节出现顺序配对；请人工核对章节对应关系。")
+    if "全文" in old_map or "全文" in new_map:
+        warnings.append("至少一个版本未识别出标准章节；可在创建比对前手工整理章节，以提高定位精度。")
+    shared_old = [key for key in old_order if key in new_map]
+    shared_new = [key for key in new_order if key in old_map]
+    if shared_old != shared_new:
+        warnings.append("章节顺序发生变化；已按标题对齐，顺序调整本身不计为内容变更。")
+    changes: list[dict] = []
+    unchanged = 0
+    all_keys = new_order + [key for key in old_order if key not in new_map]
+    for key in all_keys:
+        old, new = old_map.get(key), new_map.get(key)
+        old_text = old["text"] if old else ""
+        new_text = new["text"] if new else ""
+        if old is not None and new is not None and _comparison_text(old_text) == _comparison_text(new_text):
+            unchanged += 1
+            continue
+        kind = "added" if old is None else "removed" if new is None else "modified"
+        section = new if new is not None else old
+        title = section["title"]
+        canonical = canonical_title(title)
+        flags: list[str] = []
+        if canonical in _IMPORTANT_SECTIONS:
+            flags.append("重点章节变更，需人工复核")
+        if _NUMBER.findall(old_text) != _NUMBER.findall(new_text):
+            flags.append("数字或比例变化")
+        if _UNIT.findall(old_text) != _UNIT.findall(new_text):
+            flags.append("单位或剂型计量词变化")
+        segments, coarse = _inline_segments(old_text, new_text)
+        if coarse:
+            flags.append("长章节采用整段展示，请对照原文复核")
+        changes.append({
+            "section_key": key,
+            "section_title": title,
+            "kind": kind,
+            "priority": "high" if canonical in _IMPORTANT_SECTIONS or any("变化" in flag for flag in flags) else "normal",
+            "old_text": old_text,
+            "new_text": new_text,
+            "old_location": _location(old),
+            "new_location": _location(new),
+            "segments": segments,
+            "flags": flags,
+        })
+    return {"changes": changes, "unchanged_sections": unchanged, "warnings": warnings}
+
+
+===== 文件：app/static/styles.css =====
+:root {
+  --ink: #203a38;
+  --muted: #74817d;
+  --line: #e1e7e1;
+  --paper: #fff;
+  --bg: #f5f6f2;
+  --teal: #176b5b;
+  --teal-soft: #eaf4ee;
+  --nav: #143c38;
+  --red: #aa4945;
+  --red-soft: #fcecea;
+  --green: #237251;
+  --green-soft: #e6f3e9;
+  --amber: #9a6a1f;
+  --amber-soft: #fbf3df;
+  --radius: 14px;
+  --shadow: 0 14px 50px #183c3710;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg);
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--teal);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
+  color: #0b5043;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid #6eb6a4;
+  outline-offset: 3px;
+}
+
+button,
+input,
+select,
+textarea {
+  border-radius: 8px;
+}
+
+svg {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: 27px;
+  line-height: 1.4;
+  letter-spacing: -0.6px;
+  font-weight: 680;
+  margin-bottom: 7px;
+}
+
+h2 {
+  font-size: 18px;
+  letter-spacing: -0.2px;
+  margin-bottom: 5px;
+}
+
+h3 {
+  font-size: 15px;
+  margin-bottom: 7px;
+}
+
+p {
+  line-height: 1.8;
+}
+
+button svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.skip-link {
+  position: fixed;
+  top: -60px;
+  left: 20px;
+  padding: 10px;
+  background: white;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 15px;
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 232px;
+  background: var(--nav);
+  color: #d5e4df;
+  padding: 34px 22px 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #fff !important;
+  font-size: 22px;
+  letter-spacing: -0.6px;
+  font-weight: 650;
+  margin-bottom: 48px;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 44px;
+  border: 1px solid #ffffff35;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #ffffff08;
+}
+
+.brand-mark svg {
+  width: 30px;
+  height: 30px;
+  stroke: #d4eee0;
+}
+
+.brand-sub {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2.1px;
+  font-weight: 500;
+  color: #a1bcb2;
+  margin-top: 3px;
+}
+
+.nav-label,
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.nav-label {
+  color: #8cac9e;
+  padding-left: 13px;
+  margin-bottom: 13px;
+}
+
+nav {
+  display: grid;
+  gap: 6px;
+}
+
+nav a {
+  color: #bed1c8;
+  display: flex;
+  align-items: center;
+  padding: 13px;
+  gap: 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  transition: 0.16s;
+}
+
+nav a:hover {
+  background: #ffffff0d;
+  color: white;
+}
+
+nav a.active {
+  background: #e8f2e7;
+  color: #174a3e;
+  font-weight: 650;
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+}
+
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.nav-count {
+  margin-left: auto;
+  font-size: 10px;
+  min-width: 20px;
+  text-align: center;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #215d4b;
+  color: white;
+}
+
+.sidebar-tip {
+  border-top: 1px solid #ffffff17;
+  margin-top: auto;
+  padding: 25px 10px 27px;
+}
+
+.sidebar-tip .eyebrow {
+  color: #a1c7b6;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+}
+
+.sidebar-tip p {
+  color: #a2b9ae;
+  font-size: 11px;
+  line-height: 1.9;
+  margin: 10px 0 17px;
+}
+
+.demo-button {
+  color: #d8e8d9;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.demo-button:hover {
+  color: white;
+}
+
+.demo-button span {
+  font-size: 19px;
+}
+
+.sidebar-footer {
+  border-top: 1px solid #ffffff17;
+  padding: 22px 0;
+  font-size: 10px;
+  color: #a6c0b2;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.version-label {
+  margin-left: auto;
+  font-size: 9px;
+  color: #77998a;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #90c2a2;
+  display: inline-block;
+  flex: none;
+}
+
+.workspace {
+  margin-left: 232px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 79px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fafbf8;
+}
+
+.breadcrumb {
+  font-size: 12px;
+  color: #87928a;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.breadcrumb span:first-child {
+  color: #bcc7bd;
+}
+
+.breadcrumb span:last-child {
+  color: #435d50;
+}
+
+.operator {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 11px;
+  color: #42594d;
+}
+
+.operator-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #d6dfd3;
+  background: #e7eddf;
+  color: #687b60;
+  font-size: 11px;
+}
+
+.operator-caption {
+  font-size: 9px;
+  color: #8a9689;
+  display: block;
+  margin-top: 4px;
+}
+
+main {
+  padding: 35px 40px;
+  max-width: 1680px;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1;
+  outline: none !important;
+}
+
+.page-footer {
+  padding: 18px 40px 24px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #919c91;
+  gap: 12px;
+}
+
+.page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 27px;
+}
+
+.page-heading .eyebrow {
+  display: block;
+  color: var(--teal);
+  margin-bottom: 10px;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.8;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 9px 15px;
+  border: 1px solid #d8e1d7;
+  background: white;
+  color: #39574b;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  border-radius: 8px;
+}
+
+.button:hover {
+  background: #f5f9f3;
+  border-color: #aec7b3;
+}
+
+.button.primary {
+  background: var(--teal);
+  color: white;
+  border-color: var(--teal);
+  box-shadow: 0 3px 5px #165e4710;
+}
+
+.button.primary:hover {
+  background: #125a4c;
+}
+
+.button.subtle {
+  background: #f4f7f1;
+}
+
+.button.small {
+  padding: 6px 10px;
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.button.danger {
+  color: var(--red);
+  border-color: #eacac4;
+  background: white;
+}
+
+.button.danger:hover {
+  background: var(--red-soft);
+}
+
+.text-button {
+  background: none;
+  border: 0;
+  color: var(--teal);
+  padding: 3px;
+  font-size: 12px;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #5f7066;
+  display: grid;
+  place-items: center;
+  font-size: 23px;
+  flex: none;
+}
+
+.icon-button:hover {
+  background: #f0f4ef;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 25px;
+}
+
+.stat-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 19px 20px 17px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-label {
+  color: #6c7e70;
+  font-size: 11px;
+  margin-bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label svg {
+  color: #8aa68f;
+  width: 18px;
+  height: 18px;
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-hint {
+  font-size: 10px;
+  color: #879485;
+}
+
+.stat-card.accent {
+  background: #eef4e9;
+  border-color: #d7e3cf;
+}
+
+.stat-card.accent .stat-number {
+  color: var(--teal);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(270px, 1fr);
+  gap: 22px;
+}
+
+.panel {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 22px;
+  border-bottom: 1px solid #edf0e9;
+  gap: 12px;
+}
+
+.panel-header h2 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.panel-header p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.panel-body {
+  padding: 22px;
+}
+
+.welcome-panel {
+  background: #f0f5e9;
+  border: 1px solid #d8e4ce;
+  border-radius: var(--radius);
+  padding: 27px 26px;
+  position: relative;
+  margin-bottom: 22px;
+  overflow: hidden;
+}
+
+.welcome-panel:after {
+  content: "";
+  width: 120px;
+  height: 120px;
+  border: 24px solid #dce7cc;
+  border-radius: 50%;
+  position: absolute;
+  right: -30px;
+  top: -30px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.welcome-panel .eyebrow {
+  color: #6b8260;
+  font-size: 9px;
+}
+
+.welcome-panel h2 {
+  font-size: 20px;
+  margin-top: 13px;
+  margin-bottom: 12px;
+  line-height: 1.6;
+  max-width: 260px;
+}
+
+.welcome-panel p {
+  font-size: 11px;
+  color: #708365;
+  max-width: 270px;
+  margin-bottom: 19px;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-panel .button {
+  position: relative;
+  z-index: 1;
+}
+
+.workflow {
+  padding: 0;
+  list-style: none;
+  margin: 0;
+  counter-reset: step;
+}
+
+.workflow li {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 19px;
+  position: relative;
+}
+
+.workflow li:last-child {
+  padding: 0;
+}
+
+.workflow li:not(:last-child):after {
+  content: "";
+  position: absolute;
+  top: 27px;
+  left: 13px;
+  bottom: 3px;
+  border-left: 1px dashed #cfdccd;
+}
+
+.step-number {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  background: #f0f5ec;
+  color: #5b8063;
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.workflow strong {
+  font-weight: 550;
+  font-size: 12px;
+  display: block;
+  margin: 2px 0 5px;
+}
+
+.workflow p {
+  font-size: 10px;
+  margin: 0;
+  color: #8a9686;
+  line-height: 1.7;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th {
+  background: #f8faf6;
+  color: #7b8977;
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.2px;
+  padding: 12px 20px;
+  white-space: nowrap;
+}
+
+td {
+  padding: 16px 20px;
+  border-top: 1px solid #edf0e9;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+tr:hover td {
+  background: #fbfcf8;
+}
+
+.cell-title {
+  font-weight: 550;
+  color: var(--ink);
+  display: block;
+  margin-bottom: 5px;
+}
+
+.cell-sub {
+  display: block;
+  color: #8a9588;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 550;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: #f0f3ed;
+  color: #6a7c64;
+}
+
+.tag.teal {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.tag.amber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.tag.red {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.tag.gray {
+  background: #f0f2ef;
+  color: #7d877a;
+}
+
+.tag.green {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #edf0e9;
+}
+
+.list-row:last-child {
+  border: 0;
+}
+
+.list-icon {
+  width: 36px;
+  height: 40px;
+  background: #f1f5ed;
+  border: 1px solid #e7ede0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #6b8c6c;
+  flex: none;
+}
+
+.list-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-details strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  margin-bottom: 5px;
+}
+
+.list-details p {
+  font-size: 10px;
+  color: #85917f;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.list-arrow {
+  color: #94a48e;
+  font-size: 19px;
+}
+
+.row-link:hover {
+  background: #f8fbf4;
+}
+
+.activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity li {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1e9;
+}
+
+.activity li:first-child {
+  padding-top: 0;
+}
+
+.activity li:last-child {
+  border: 0;
+  padding-bottom: 0;
+}
+
+.activity-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  background: #91b59c;
+  flex: none;
+  border-radius: 50%;
+}
+
+.activity-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-content strong {
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.activity-content p {
+  font-size: 10px;
+  color: #869080;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.activity time {
+  font-size: 9px;
+  color: #929c8c;
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-wrap {
+  position: relative;
+  max-width: 330px;
+  width: 100%;
+}
+
+.search-wrap svg {
+  position: absolute;
+  left: 12px;
+  top: 11px;
+  width: 16px;
+  height: 16px;
+  color: #96a18f;
+}
+
+.search-wrap input {
+  padding-left: 36px;
+  width: 100%;
+}
+
+.toolbar .count-label {
+  font-size: 11px;
+  color: #8b9783;
+  margin-left: auto;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 17px;
+}
+
+.field label {
+  font-size: 12px;
+  color: #3d5747;
+  font-weight: 550;
+}
+
+.field small,
+.field-hint {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #8a9682;
+}
+
+.required {
+  color: #bb695c;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #dce3d6;
+  background: white;
+  color: #2c4637;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: #b6c6af;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #a3ad9e;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.8;
+}
+
+select {
+  padding-right: 27px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+
+.span-2 {
+  grid-column: 1/-1;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+}
+
+.help-box {
+  border: 1px solid #dce7d5;
+  background: #f5f8f0;
+  border-radius: 9px;
+  padding: 12px 14px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #687d59;
+  margin-bottom: 19px;
+}
+
+.notice {
+  border: 1px solid #eadbb6;
+  background: #fbf6e9;
+  border-radius: 9px;
+  padding: 12px 15px;
+  font-size: 11px;
+  color: #8a712f;
+  line-height: 1.8;
+  margin-bottom: 18px;
+  display: flex;
+  gap: 9px;
+}
+
+.notice svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 44px 24px;
+  color: #899781;
+}
+
+.empty-state svg {
+  width: 35px;
+  height: 35px;
+  color: #99b18e;
+  margin-bottom: 14px;
+  stroke-width: 1.3;
+}
+
+.empty-state h3 {
+  font-weight: 550;
+  color: #5c7552;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  font-size: 11px;
+  margin-bottom: 18px;
+  max-width: 390px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.empty-state.compact {
+  padding: 32px 20px;
+}
+
+.empty-state.compact p {
+  margin-bottom: 0;
+}
+
+.loading-state {
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  color: #86907d;
+  font-size: 12px;
+}
+
+.spinner {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 2px solid #dce6d4;
+  border-top-color: #467c56;
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-state {
+  max-width: 550px;
+  margin: 50px auto;
+  background: white;
+  padding: 32px;
+  border: 1px solid #e7d6ca;
+  border-radius: var(--radius);
+}
+
+.error-state h2 {
+  font-size: 17px;
+  color: #8b5743;
+}
+
+.error-state p {
+  color: #8c7b6f;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.metadata-label {
+  display: block;
+  font-size: 10px;
+  color: #8a9680;
+  margin-bottom: 7px;
+}
+
+.metadata-value {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.metadata-note {
+  border-top: 1px solid #edf1e8;
+  padding-top: 17px;
+  margin-top: 18px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #6f7f60;
+}
+
+.version-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 15px;
+}
+
+.version-card {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 19px;
+  background: white;
+}
+
+.version-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.version-card-head h3 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.version-card p {
+  font-size: 11px;
+  color: #839077;
+  margin-bottom: 7px;
+  overflow-wrap: anywhere;
+}
+
+.version-card .actions {
+  margin-top: 17px;
+  padding-top: 14px;
+  border-top: 1px solid #edf1e7;
+}
+
+.hash {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  color: #87957d;
+  line-height: 1.7;
+}
+
+.back-link {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 18px;
+  color: #7c8e6d;
+}
+
+.back-link svg {
+  width: 15px;
+  height: 15px;
+}
+
+.comparison-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 23px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+
+.version-pair {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: 1;
+  min-width: 0;
+}
+
+.version-pair > svg {
+  color: #a6b39a;
+  flex: none;
+}
+
+.version-pill {
+  min-width: 100px;
+}
+
+.version-pill .eyebrow {
+  display: block;
+  color: #8b9780;
+  font-size: 9px;
+  margin-bottom: 7px;
+  letter-spacing: 0.5px;
+}
+
+.version-pill strong {
+  font-size: 13px;
+  display: block;
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+
+.version-pill small {
+  font-size: 10px;
+  color: #8b9680;
+}
+
+.review-progress {
+  min-width: 160px;
+}
+
+.review-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #8a967d;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.review-progress-label strong {
+  color: #4b7353;
+  font-weight: 550;
+}
+
+.progress-track {
+  height: 5px;
+  border-radius: 4px;
+  background: #edf2e7;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #7ca27b;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 19px;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #e9eee4;
+  border-radius: 9px;
+}
+
+.segmented button {
+  border: 0;
+  background: none;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #849174;
+  white-space: nowrap;
+}
+
+.segmented button.active {
+  background: white;
+  color: #3d6b43;
+  box-shadow: 0 1px 5px #203b1910;
+}
+
+.segmented button:hover {
+  color: #3d6b43;
+}
+
+.filter-select {
+  width: auto;
+  max-width: 180px;
+  min-height: 35px;
+  font-size: 11px;
+  background: #fff;
+}
+
+.filter-bar .small-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: #94a187;
+}
+
+.change-card {
+  border: 1px solid #dfe6d7;
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+  margin-bottom: 18px;
+  scroll-margin-top: 20px;
+}
+
+.change-card[data-priority="high"] {
+  border-left: 3px solid #caab64;
+}
+
+.change-card-head {
+  padding: 17px 21px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e9eee2;
+}
+
+.change-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.change-title h3 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.change-index {
+  color: #a2ad96;
+  font:
+    10px ui-monospace,
+    monospace;
+  margin-right: 2px;
+}
+
+.change-flags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 11px 21px;
+  background: #fcfcf8;
+  border-bottom: 1px solid #edf0e7;
+  font-size: 10px;
+  color: #8e9679;
+}
+
+.change-flags span {
+  padding: 2px 6px;
+  border: 1px solid #e8e9dd;
+  border-radius: 4px;
+}
+
+.diff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.diff-column:first-child {
+  border-right: 1px solid #e8eee2;
+}
+
+.diff-label {
+  padding: 11px 21px;
+  background: #f9faf6;
+  color: #8e9a80;
+  font-size: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diff-label span:last-child {
+  color: #a4ae97;
+  font-size: 9px;
+}
+
+.diff-text {
+  padding: 20px 21px;
+  font-size: 12px;
+  line-height: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 100px;
+  color: #4b5e43;
+}
+
+.diff-text del {
+  background: #f9e4df;
+  color: #a45245;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+.diff-text ins {
+  background: #e2f0dc;
+  color: #376d39;
+  text-decoration: none;
+  border-bottom: 1px solid #a8c49a;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+.diff-text .numeric {
+  font-weight: 750;
+  letter-spacing: 0.2px;
+}
+
+.absent-text {
+  font-style: italic;
+  color: #a1ac95;
+  font-size: 11px;
+}
+
+.review-area {
+  padding: 15px 21px;
+  background: #fbfcf8;
+  border-top: 1px solid #e8eee1;
+}
+
+.review-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.review-note {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-note label {
+  font-size: 10px;
+  color: #839076;
+}
+
+.review-note textarea {
+  min-height: 37px;
+  height: 37px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.review-history {
+  font-size: 10px;
+  color: #8a987f;
+  margin-bottom: 10px;
+  line-height: 1.7;
+}
+
+.review-history strong {
+  color: #6a8261;
+  font-weight: 550;
+}
+
+.report-links {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.report-links .button {
+  font-size: 10px;
+  min-height: 33px;
+  padding: 7px 10px;
+}
+
+.comparison-footer {
+  font-size: 10px;
+  color: #97a18d;
+  margin: 21px 0;
+  text-align: center;
+}
+
+.audit-detail {
+  max-width: 480px;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+  color: #6f7f62;
+}
+
+.audit-filter {
+  width: 210px;
+}
+
+.badge-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.badge-pending:before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dialog-shell {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+dialog {
+  border: 1px solid #d5dfce;
+  border-radius: 17px;
+  padding: 0;
+  width: min(650px, calc(100vw - 32px));
+  max-height: 86vh;
+  color: var(--ink);
+  box-shadow: 0 24px 100px #16351b2f;
+}
+
+dialog.wide {
+  width: min(940px, calc(100vw - 32px));
+}
+
+dialog::backdrop {
+  background: #142b245c;
+  backdrop-filter: blur(3px);
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 27px 20px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 2;
+}
+
+.dialog-header .eyebrow {
+  font-size: 8px;
+  color: #92a182;
+  letter-spacing: 1.5px;
+}
+
+.dialog-header h2 {
+  font-size: 20px;
+  margin: 6px 0 0;
+}
+
+#modal-content {
+  padding: 24px 27px;
+}
+
+.dialog-error {
+  background: #fff0e8;
+  border: 1px solid #f1d6c7;
+  padding: 10px 13px;
+  color: #a06548;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.upload-area {
+  position: relative;
+  border: 1px dashed #b9cbb0;
+  background: #f6f9f1;
+  border-radius: 10px;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.upload-area svg {
+  color: #7b9c6d;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 8px;
+}
+
+.upload-area label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 9px;
+  color: #5a7650;
+}
+
+.upload-area small {
+  display: block;
+  font-size: 10px;
+  color: #95a18a;
+  margin-top: 9px;
+}
+
+.upload-area input {
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  max-width: 360px;
+  padding: 8px;
+  color: #7b8b6e;
+}
+
+.upload-area input::file-selector-button {
+  background: #e7eedf;
+  color: #5c7c50;
+  border: 1px solid #cddbc2;
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 11px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.import-tabs {
+  margin-bottom: 19px;
+}
+
+.tab-pane[hidden] {
+  display: none;
+}
+
+.raw-text {
+  background: #f7f9f3;
+  border: 1px solid #e2e9db;
+  padding: 17px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.9;
+  max-height: 340px;
+  overflow: auto;
+  color: #5c7150;
+  overflow-wrap: anywhere;
+}
+
+.version-meta {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  color: #859476;
+  font-size: 10px;
+  margin-bottom: 14px;
+}
+
+.section-editor {
+  border: 1px solid #dfe7d5;
+  border-radius: 9px;
+  padding: 15px;
+  margin-bottom: 13px;
+  background: #fcfdf9;
+}
+
+.section-editor-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+
+.section-editor-head input {
+  font-weight: 550;
+  background: white;
+}
+
+.section-editor-head .section-number {
+  font-size: 11px;
+  color: #96a486;
+  padding: 0 4px;
+}
+
+.section-editor textarea {
+  font-size: 11px;
+  min-height: 110px;
+  background: #fff;
+}
+
+.section-editor .icon-button {
+  width: 29px;
+  height: 29px;
+  font-size: 17px;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.sticky-form-actions {
+  position: sticky;
+  bottom: -24px;
+  background: white;
+  padding-bottom: 20px;
+  z-index: 1;
+}
+
+.toasts {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 400px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #254f3b;
+  color: #f2f6ec;
+  padding: 14px 18px;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px #223c2626;
+  font-size: 12px;
+  line-height: 1.7;
+  animation: toast-in 0.2s ease;
+}
+
+.toast.error {
+  background: #9b5843;
+}
+
+.toast svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin-top: 2px;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: white;
+  font-size: 16px;
+  z-index: 200;
+}
+
+.muted {
+  color: #8a9780;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.hidden,
+[hidden] {
+  display: none !important;
+}
+
+@media (min-width: 1450px) {
+  main {
+    padding: 40px 48px;
+  }
+  .topbar {
+    padding: 0 48px;
+  }
+  .dashboard-grid {
+    grid-template-columns: 1.8fr 1fr;
+  }
+  .stat-card {
+    padding: 23px 25px;
+  }
+  .stat-number {
+    font-size: 37px;
+  }
+  .panel-header {
+    padding: 22px 25px;
+  }
+}
+
+@media (max-width: 1150px) {
+  .sidebar {
+    width: 204px;
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .workspace {
+    margin-left: 204px;
+  }
+  main {
+    padding: 28px;
+  }
+  .topbar {
+    padding: 0 28px;
+  }
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-aside {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .dashboard-aside .panel {
+    margin-bottom: 22px;
+  }
+  .stats {
+    gap: 11px;
+  }
+  .stat-card {
+    padding: 17px;
+  }
+  .metadata-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .review-controls {
+    flex-wrap: wrap;
+  }
+  .review-note {
+    min-width: 100%;
+  }
+  .review-controls .actions {
+    margin-left: auto;
+  }
+  .page-heading {
+    align-items: flex-start;
+  }
+  .page-footer {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+  .comparison-summary {
+    flex-wrap: wrap;
+  }
+  .review-progress {
+    min-width: 180px;
+  }
+}
+
+@media (max-width: 800px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    padding: 15px 20px 0;
+  }
+  .brand {
+    font-size: 20px;
+    margin-bottom: 17px;
+  }
+  .brand-mark {
+    width: 33px;
+    height: 35px;
+  }
+  .brand-mark svg {
+    width: 25px;
+    height: 25px;
+  }
+  .brand-sub {
+    font-size: 7px;
+    letter-spacing: 1.7px;
+  }
+  .nav-label,
+  .sidebar-tip,
+  .sidebar-footer {
+    display: none;
+  }
+  nav {
+    display: flex;
+    gap: 4px;
+    overflow: auto;
+    margin: 0 -8px;
+  }
+  nav a {
+    white-space: nowrap;
+    font-size: 11px;
+    padding: 11px 12px;
+    border-radius: 8px 8px 0 0;
+    gap: 7px;
+  }
+  nav a.active {
+    background: var(--bg);
+  }
+  nav a svg {
+    width: 15px;
+    height: 15px;
+  }
+  .nav-count {
+    font-size: 9px;
+  }
+  .workspace {
+    margin: 0;
+  }
+  .topbar {
+    height: 61px;
+    padding: 0 22px;
+  }
+  .operator-caption {
+    display: none;
+  }
+  .operator-avatar {
+    width: 26px;
+    height: 26px;
+  }
+  .operator {
+    font-size: 10px;
+  }
+  .breadcrumb {
+    font-size: 11px;
+    gap: 10px;
+  }
+  main {
+    padding: 25px 22px;
+  }
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .stat-number {
+    font-size: 30px;
+  }
+  .stat-label {
+    margin-bottom: 12px;
+  }
+  .page-heading {
+    gap: 15px;
+    margin-bottom: 21px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-size: 23px;
+  }
+  .subtitle {
+    font-size: 11px;
+  }
+  .page-heading .eyebrow {
+    font-size: 9px;
+  }
+  .dashboard-aside {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-grid {
+    gap: 0;
+  }
+  .page-footer {
+    font-size: 9px;
+    padding: 14px 22px 20px;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .toolbar {
+    padding: 13px 17px;
+  }
+  .panel-header {
+    padding: 17px;
+  }
+  .panel-body {
+    padding: 17px;
+  }
+  .metadata-grid {
+    gap: 17px;
+  }
+  .diff-grid {
+    grid-template-columns: 1fr;
+  }
+  .diff-column:first-child {
+    border-right: 0;
+    border-bottom: 1px solid #e8eee2;
+  }
+  .diff-text {
+    min-height: 70px;
+    padding: 16px 18px;
+  }
+  .diff-label {
+    padding: 10px 18px;
+  }
+  .change-card-head {
+    padding: 15px 18px;
+    align-items: flex-start;
+  }
+  .change-title {
+    gap: 6px;
+  }
+  .change-title h3 {
+    font-size: 13px;
+  }
+  .change-flags {
+    padding: 10px 18px;
+  }
+  .review-area {
+    padding: 14px 18px;
+  }
+  .review-controls .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .review-controls .button {
+    font-size: 10px;
+    padding: 7px 9px;
+    min-height: 32px;
+  }
+  .filter-bar {
+    gap: 10px;
+  }
+  .segmented button {
+    padding: 7px 10px;
+    font-size: 10px;
+  }
+  .filter-select {
+    font-size: 10px;
+  }
+  .filter-bar .small-hint {
+    display: none;
+  }
+  .comparison-summary {
+    padding: 17px;
+  }
+  .version-pair {
+    gap: 15px;
+  }
+  .version-pill strong {
+    font-size: 12px;
+  }
+  .version-pill small {
+    font-size: 9px;
+  }
+  .report-links {
+    flex-wrap: wrap;
+  }
+  .comparison-heading .actions {
+    width: 100%;
+  }
+  th {
+    padding: 11px 16px;
+  }
+  td {
+    padding: 14px 16px;
+  }
+  .table-scroll {
+    border-radius: 0 0 14px 14px;
+  }
+  .toasts {
+    left: 18px;
+    right: 18px;
+    bottom: 18px;
+    max-width: none;
+  }
+  .toast {
+    font-size: 11px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .span-2 {
+    grid-column: auto;
+  }
+  .dialog-header {
+    padding: 20px;
+  }
+  .dialog-header h2 {
+    font-size: 18px;
+  }
+  #modal-content {
+    padding: 20px;
+  }
+  .sticky-form-actions {
+    bottom: -20px;
+  }
+  .audit-detail {
+    min-width: 220px;
+  }
+  .version-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .welcome-panel {
+    margin-bottom: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .page-footer,
+  .actions,
+  .filter-bar,
+  .review-controls,
+  dialog,
+  .toasts {
+    display: none !important;
+  }
+  .workspace {
+    margin: 0;
+  }
+  main {
+    padding: 0;
+  }
+  .change-card,
+  .panel {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+  .diff-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .diff-text {
+    font-size: 10pt;
+  }
+  .diff-column:first-child {
+    border-right: 1px solid #ddd;
+  }
+  .stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  body {
+    background: white;
+  }
+}
+
+
+===== 文件：app/static/index.html =====
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#123d3b" />
+    <title>MedLabel Review · 药品说明书审核</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='13' fill='%23174441'/%3E%3Cpath d='M15 12h18v24H15z' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='m19 25 4 4 7-9M20 17h8' fill='none' stroke='%239ce1c7' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳至主要内容</a>
+    <aside class="sidebar" aria-label="主导航">
+      <a class="brand" href="#dashboard" aria-label="MedLabel Review 工作台">
+        <span class="brand-mark" aria-hidden="true"
+          ><svg viewBox="0 0 32 32">
+            <path d="M8 5h12l4 4v18H8zM20 5v5h4M12 13h8m-8 5 3 3 6-6" /></svg
+        ></span>
+        <span>MedLabel<span class="brand-sub">REVIEW WORKSPACE</span></span>
+      </a>
+      <div class="nav-label">说明书管理</div>
+      <nav id="navigation">
+        <a href="#dashboard" data-nav="dashboard"
+          ><span class="nav-icon" data-icon="grid"></span>工作台</a
+        >
+        <a href="#drugs" data-nav="drugs"
+          ><span class="nav-icon" data-icon="archive"></span>药品与版本</a
+        >
+        <a href="#comparisons" data-nav="comparisons"
+          ><span class="nav-icon" data-icon="compare"></span>比对与审核<span
+            id="nav-pending"
+            class="nav-count"
+            hidden
+          ></span
+        ></a>
+        <a href="#audit" data-nav="audit"
+          ><span class="nav-icon" data-icon="clock"></span>操作记录</a
+        >
+      </nav>
+      <div class="sidebar-tip">
+        <span class="eyebrow">让每一次变更都有依据</span>
+        <p>从原文定位到人工复核，<br />保留完整的审核过程。</p>
+        <button type="button" class="demo-button" data-action="demo">
+          体验模拟示例 <span aria-hidden="true">↗</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <span class="status-dot"></span> 本地工作空间<span class="version-label"
+          >V1.0</span
+        >
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumb">
+          药品说明书 <span>/</span> <span id="breadcrumb-current">工作台</span>
+        </div>
+        <div class="operator">
+          <span class="operator-avatar" aria-hidden="true">审</span
+          ><span
+            >本地单人审核<span class="operator-caption"
+              >资料保存在本机</span
+            ></span
+          >
+        </div>
+      </header>
+      <main id="main" tabindex="-1" aria-live="polite">
+        <div class="loading-state">
+          <span class="spinner"></span>正在加载工作空间…
+        </div>
+      </main>
+      <footer class="page-footer">
+        <span>药品说明书版本比对与变更审核系统</span
+        ><span>辅助资料核查 · 变更需人工复核</span>
+      </footer>
+    </div>
+    <dialog id="modal" aria-labelledby="modal-title">
+      <div class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <span id="modal-eyebrow" class="eyebrow">MEDLABEL REVIEW</span>
+            <h2 id="modal-title"></h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="modal-close"
+            aria-label="关闭对话框"
+          >
+            ×
+          </button>
+        </header>
+        <div id="modal-content"></div>
+      </div>
+    </dialog>
+    <div
+      id="toasts"
+      class="toasts"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <noscript
+      ><div class="noscript">
+        本应用需要启用 JavaScript 才能管理药品说明书。
+      </div></noscript
+    >
+  </body>
+</html>
+
+
+===== 文件：app/static/app.js =====
+/* MedLabel Review — local document review workspace. No remote assets or services. */
+"use strict";
+
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) =>
+  Array.from(root.querySelectorAll(selector));
+const main = $("#main");
+const modal = $("#modal");
+const state = {
+  route: "",
+  generation: 0,
+  comparison: null,
+  reviewStatus: "all",
+  priority: "all",
+  drafts: new Map(),
+  drugs: [],
+  comparisons: [],
+  audit: [],
+  modalVersion: null,
+};
+const glyphs = {
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  archive: '<path d="M4 8h16v12H4zM3 4h18v4H3zM9 12h6"/>',
+  compare: '<path d="M3 7h16m-4-4 4 4-4 4M21 17H5m4-4-4 4 4 4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  file: '<path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6"/>',
+  upload: '<path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/>',
+  download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',
+  arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
+  back: '<path d="M20 12H4m6-6-6 6 6 6"/>',
+  warning: '<path d="M12 3 2 21h20zM12 9v5m0 3v1"/>',
+  edit: '<path d="m14 5 5 5M4 20l1-6L16 3l5 5-11 11z"/>',
+  filter: '<path d="M3 5h18l-7 8v7l-4-2v-5z"/>',
+  spark:
+    '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/>',
+};
+function icon(name) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${glyphs[name] || glyphs.file}</svg>`;
+}
+function esc(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ],
+  );
+}
+function id(value) {
+  return Number.isInteger(Number(value)) && Number(value) > 0
+    ? String(Number(value))
+    : "0";
+}
+function fmtDate(value, includeTime = false) {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  }).format(date);
+}
+function statusTag(status) {
+  const options = {
+    pending: ["待复核", "amber"],
+    confirmed: ["已确认", "teal"],
+    ignored: ["已忽略", "gray"],
+    completed: ["已完成", "teal"],
+    complete: ["已完成", "teal"],
+    reviewed: ["已完成", "teal"],
+  };
+  const [label, color] = options[status] || ["待复核", "amber"];
+  return `<span class="tag ${color}"><span class="badge-pending">${label}</span></span>`;
+}
+function kindTag(kind) {
+  return `<span class="tag ${kind === "added" ? "green" : kind === "removed" ? "red" : "gray"}">${{ added: "新增", removed: "删除", modified: "修改" }[kind] || esc(kind)}</span>`;
+}
+function pageHeading(eyebrow, title, subtitle, actions = "", extra = "") {
+  return `<div class="page-heading ${extra}"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subtitle">${esc(subtitle)}</p></div>${actions ? `<div class="actions">${actions}</div>` : ""}</div>`;
+}
+function empty(title, description, action = "", compact = false) {
+  return `<div class="empty-state ${compact ? "compact" : ""}">${icon("file")}<h3>${esc(title)}</h3><p>${esc(description)}</p>${action}</div>`;
+}
+function button(label, action, data = "", primary = false, glyph = "") {
+  return `<button type="button" class="button${primary ? " primary" : ""}" data-action="${action}" ${data}>${glyph ? icon(glyph) : ""}${esc(label)}</button>`;
+}
+function warnings(items) {
+  if (!items?.length) return "";
+  return `<div class="notice">${icon("warning")}<p>${items.map((item) => esc(item)).join("<br>")}</p></div>`;
+}
+async function api(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (options.method && options.method !== "GET")
+    headers.set("X-Requested-With", "MedLabelReview");
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+    options.body = JSON.stringify(options.body);
+  }
+  let response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers,
+      credentials: "same-origin",
+    });
+  } catch (_) {
+    throw new Error("无法连接本地服务，请确认应用已启动后重试。");
+  }
+  let result;
+  try {
+    result = await response.json();
+  } catch (_) {
+    throw new Error("服务返回了无法读取的内容，请稍后重试。");
+  }
+  if (!response.ok) {
+    let detail =
+      result.detail || result.message || `请求失败（${response.status}）`;
+    if (Array.isArray(detail))
+      detail = detail
+        .map(
+          (item) =>
+            `${(item.loc || []).filter((p) => p !== "body").join(" / ")}：${item.msg}`,
+        )
+        .join("；");
+    const error = new Error(
+      typeof detail === "string" ? detail : JSON.stringify(detail),
+    );
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+function toast(message, error = false) {
+  const element = document.createElement("div");
+  element.className = `toast${error ? " error" : ""}`;
+  element.innerHTML = `${icon(error ? "warning" : "check")}<span>${esc(message)}</span>`;
+  $("#toasts").append(element);
+  setTimeout(() => element.remove(), error ? 7500 : 4200);
+}
+function renderError(error) {
+  main.innerHTML = `<div class="error-state"><h2>暂时无法加载</h2><p>${esc(error.message)}</p>${button("重新加载", "refresh", "", "", "arrow")}</div>`;
+}
+function modalError(message) {
+  let container = $(".dialog-error", modal);
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "dialog-error";
+    container.setAttribute("role", "alert");
+    $("#modal-content").prepend(container);
+  }
+  container.textContent = message;
+  container.scrollIntoView({ block: "nearest" });
+}
+function showModal(title, content, wide = false) {
+  $("#modal-title").textContent = title;
+  $("#modal-content").innerHTML = content;
+  modal.classList.toggle("wide", wide);
+  if (!modal.open) modal.showModal();
+  // Set initial focus synchronously; a delayed callback can steal focus after
+  // the user has already moved to another field and misdirect their input.
+  const input = $('input:not([type="hidden"]), textarea, select', modal);
+  (input || $("#modal-close")).focus();
+}
+function closeModal() {
+  modal.close();
+  state.modalVersion = null;
+}
+$("#modal-close").addEventListener("click", closeModal);
+modal.addEventListener("click", (event) => {
+  if (event.target === modal) {
+    const bounds = modal.getBoundingClientRect();
+    if (
+      event.clientX < bounds.left ||
+      event.clientX > bounds.right ||
+      event.clientY < bounds.top ||
+      event.clientY > bounds.bottom
+    )
+      closeModal();
+  }
+});
+$$("[data-icon]").forEach((element) => {
+  element.innerHTML = icon(element.dataset.icon);
+});
+
+async function navigate() {
+  const route = location.hash.slice(1) || "dashboard";
+  const generation = ++state.generation;
+  const previous = state.route;
+  state.route = route;
+  if (previous !== route) {
+    state.reviewStatus = "all";
+    state.priority = "all";
+  }
+  const parts = route.split("/");
+  const section = ["dashboard", "drugs", "comparisons", "audit"].includes(
+    parts[0],
+  )
+    ? parts[0]
+    : "dashboard";
+  $$("[data-nav]").forEach((element) => {
+    const selected = element.dataset.nav === section;
+    element.classList.toggle("active", selected);
+    if (selected) element.setAttribute("aria-current", "page");
+    else element.removeAttribute("aria-current");
+  });
+  $("#breadcrumb-current").textContent = {
+    dashboard: "工作台",
+    drugs: parts[1] ? "药品档案" : "药品与版本",
+    comparisons: parts[1] ? "变更审核" : "比对与审核",
+    audit: "操作记录",
+  }[section];
+  main.innerHTML =
+    '<div class="loading-state"><span class="spinner"></span>正在加载…</div>';
+  try {
+    let html;
+    if (section === "drugs" && parts[1])
+      html = await drugPage(Number(parts[1]));
+    else if (section === "drugs") html = await drugsPage();
+    else if (section === "comparisons" && parts[1])
+      html = await comparisonPage(Number(parts[1]));
+    else if (section === "comparisons") html = await comparisonsPage();
+    else if (section === "audit") html = await auditPage();
+    else html = await dashboardPage();
+    if (generation !== state.generation) return;
+    main.innerHTML = html;
+    document.title = `${$("#breadcrumb-current").textContent} · MedLabel Review`;
+    if (previous !== route) window.scrollTo(0, 0);
+  } catch (error) {
+    if (generation === state.generation) renderError(error);
+  }
+}
+window.addEventListener("hashchange", navigate);
+
+function auditLabel(action) {
+  const mapping = {
+    "drug.create": "建立药品档案",
+    "version.import": "导入说明书版本",
+    "version.create": "导入说明书版本",
+    "version.correct": "校正说明书章节",
+    "version.sections.update": "校正说明书章节",
+    "comparison.create": "创建版本比对",
+    "change.review": "更新审核结论",
+    "demo.seed": "载入模拟示例",
+    create_drug: "建立药品档案",
+    import_version: "导入说明书版本",
+    correct_sections: "校正说明书章节",
+    create_comparison: "创建版本比对",
+    review_change: "更新审核结论",
+  };
+  return mapping[action] || action;
+}
+function detailText(detail) {
+  let value = detail;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch (_) {
+      return value;
+    }
+  }
+  if (!value || typeof value !== "object") return String(value ?? "");
+  if (Array.isArray(value.before) && Array.isArray(value.after)) {
+    return `章节校正：${value.before.length} 个 → ${value.after.length} 个章节`;
+  }
+  if (value.before?.status && value.after?.status) {
+    const labels = {
+      pending: "待复核",
+      confirmed: "已确认",
+      ignored: "已忽略",
+    };
+    return `${labels[value.before.status] || value.before.status} → ${labels[value.after.status] || value.after.status}${value.after.note ? `；复核意见：${value.after.note}` : ""}`;
+  }
+  const labels = {
+    name: "药品",
+    label: "版本",
+    filename: "文件",
+    drug_id: "药品档案",
+    old_version_id: "旧版编号",
+    new_version_id: "新版编号",
+    changes: "变更数",
+    comparison_id: "比对编号",
+    note: "复核意见",
+    status: "状态",
+  };
+  return Object.entries(value)
+    .filter(([key]) => key !== "sha256")
+    .map(
+      ([key, item]) =>
+        `${labels[key] || key}：${typeof item === "object" ? JSON.stringify(item) : item}`,
+    )
+    .join(" · ");
+}
+function activityList(items, limit = 5) {
+  if (!items?.length)
+    return empty(
+      "尚无操作记录",
+      "导入说明书后，操作记录会显示在这里。",
+      "",
+      true,
+    );
+  return `<ul class="activity">${items
+    .slice(0, limit)
+    .map(
+      (item) =>
+        `<li><span class="activity-dot"></span><div class="activity-content"><strong>${esc(auditLabel(item.action))}</strong><p>${esc(detailText(item.detail))}</p></div><time>${esc(fmtDate(item.created_at))}</time></li>`,
+    )
+    .join("")}</ul>`;
+}
+async function dashboardPage() {
+  const [data, comparisons] = await Promise.all([
+    api("/api/dashboard"),
+    api("/api/comparisons"),
+  ]);
+  const count = Number(data.pending_changes || 0);
+  $("#nav-pending").textContent = count;
+  $("#nav-pending").hidden = !count;
+  const stats = [
+    ["药品档案", data.drugs, "已建立的药品资料", "archive"],
+    ["说明书版本", data.versions, "保留来源与原始文件", "file"],
+    ["比对任务", data.comparisons, "可追溯的版本变更", "compare"],
+    ["待复核变更", count, "等待人工确认与处理", "shield"],
+  ];
+  return (
+    pageHeading(
+      "YOUR REVIEW WORKSPACE",
+      "每一次变更，都清晰可见",
+      "管理说明书版本，让变更识别、复核与归档有序进行。",
+      button("新建药品", "new-drug", "", true, "plus"),
+    ) +
+    `<div class="stats">${stats.map(([label, value, hint, glyph], index) => `<div class="stat-card ${index === 3 ? "accent" : ""}"><div class="stat-label">${label}${icon(glyph)}</div><div class="stat-number">${esc(value ?? 0)}</div><div class="stat-hint">${hint}</div></div>`).join("")}</div>` +
+    `<div class="dashboard-grid"><div><section class="panel"><header class="panel-header"><div><h2>最近的比对任务</h2><p>从差异发现到审核完成</p></div><a class="text-button" href="#comparisons">查看全部 →</a></header>${
+      comparisons.length
+        ? comparisons
+            .slice(0, 5)
+            .map(
+              (item) =>
+                `<a class="list-row row-link" href="#comparisons/${id(item.id)}"><span class="list-icon">${icon("compare")}</span><div class="list-details"><strong>${esc(item.drug_name || "说明书版本比对")}</strong><p>${esc(item.old_label)} → ${esc(item.new_label)} · ${esc(item.total_changes ?? 0)} 处变更</p></div>${statusTag(Number(item.pending_changes) ? "pending" : "completed")}<span class="list-arrow">›</span></a>`,
+            )
+            .join("")
+        : empty(
+            "开启第一份说明书审核",
+            "建立药品档案，导入两个版本，即可生成章节差异。",
+            button("体验模拟示例", "demo", "", "", "spark"),
+          )
+    }</section><section class="panel"><header class="panel-header"><h2>最近操作</h2><a href="#audit" class="text-button">完整记录 →</a></header><div class="panel-body">${activityList(data.recent_activity)}</div></section></div><aside class="dashboard-aside"><div class="welcome-panel"><span class="eyebrow">A CLEARER REVIEW PROCESS</span><h2>关注重要变化，<br>保留判断依据。</h2><p>对齐说明书章节，定位数字、单位和重点条款变化，逐条记录人工复核意见。</p><a class="button" href="#drugs">进入药品资料库 ${icon("arrow")}</a></div><section class="panel"><header class="panel-header"><h2>四步完成审核</h2></header><div class="panel-body"><ol class="workflow"><li><span class="step-number">01</span><div><strong>建立档案与导入版本</strong><p>支持纯文字 PDF、DOCX、TXT 和粘贴文本</p></div></li><li><span class="step-number">02</span><div><strong>检查章节，生成比对</strong><p>必要时先校正识别结果，再固定比对依据</p></div></li><li><span class="step-number">03</span><div><strong>逐条人工复核</strong><p>确认或忽略变更，保存审核意见</p></div></li><li><span class="step-number">04</span><div><strong>导出报告，留存记录</strong><p>HTML、CSV、JSON 三种格式</p></div></li></ol></div></section></aside></div>`
+  );
+}
+async function drugsPage() {
+  state.drugs = await api("/api/drugs");
+  return (
+    pageHeading(
+      "DOCUMENT LIBRARY",
+      "药品与版本",
+      "以药品为单位归集说明书，保留每一版的来源与原文。",
+      button("新建药品", "new-drug", "", true, "plus"),
+    ) +
+    `<section class="panel"><div class="toolbar"><div class="search-wrap">${icon("search")}<input type="search" id="drug-search" aria-label="搜索药品名称、厂家或批准文号" placeholder="搜索药品、厂家或批准文号"></div><span class="count-label" id="drug-count">${state.drugs.length} 个药品档案</span></div><div id="drug-list">${drugTable(state.drugs)}</div></section>`
+  );
+}
+function drugTable(items) {
+  if (!items.length)
+    return empty(
+      "没有找到药品档案",
+      "新建档案后，可以导入说明书并开始版本比对。",
+      button("新建药品", "new-drug", "", true, "plus"),
+    );
+  return `<div class="table-scroll"><table><thead><tr><th>药品名称 / 规格</th><th>生产厂家</th><th>批准文号</th><th>版本</th><th>建立日期</th><th></th></tr></thead><tbody>${items.map((item) => `<tr><td><a class="cell-title" href="#drugs/${id(item.id)}">${esc(item.name)}</a><span class="cell-sub">${esc(item.specification || "未填写规格")}</span></td><td>${esc(item.manufacturer || "—")}</td><td class="mono">${esc(item.approval_number || "—")}</td><td><span class="tag teal">${esc(item.version_count ?? 0)} 版</span></td><td class="nowrap muted">${esc(fmtDate(item.created_at))}</td><td class="text-right"><a class="button small" href="#drugs/${id(item.id)}">查看档案 →</a></td></tr>`).join("")}</tbody></table></div>`;
+}
+async function drugPage(drugId) {
+  const [drug, versions] = await Promise.all([
+    api(`/api/drugs/${id(drugId)}`),
+    api(`/api/drugs/${id(drugId)}/versions`),
+  ]);
+  const fields = [
+    ["生产厂家", drug.manufacturer],
+    ["药品规格", drug.specification],
+    ["批准文号", drug.approval_number],
+    ["建立日期", fmtDate(drug.created_at)],
+  ];
+  return (
+    `<a class="back-link" href="#drugs">${icon("back")} 返回药品资料库</a>` +
+    pageHeading(
+      "DRUG DOSSIER",
+      drug.name,
+      "保存来源，核对章节，再开始版本审核。",
+      button(
+        "导入版本",
+        "import-version",
+        `data-id="${id(drugId)}"`,
+        true,
+        "upload",
+      ) +
+        button(
+          "创建比对",
+          "new-comparison",
+          `data-id="${id(drugId)}" ${versions.length < 2 ? 'disabled title="请先导入至少两个版本"' : ""}`,
+          "",
+          "compare",
+        ),
+    ) +
+    `<section class="panel"><div class="panel-body"><div class="metadata-grid">${fields.map(([label, value]) => `<div><span class="metadata-label">${label}</span><span class="metadata-value">${esc(value || "未填写")}</span></div>`).join("")}</div>${drug.notes ? `<div class="metadata-note">${esc(drug.notes)}</div>` : ""}</div></section><div class="page-heading"><div><h2>说明书版本</h2><p class="subtitle">共 ${versions.length} 个版本 · 导入后请检查章节识别结果</p></div></div>${versions.length ? `<div class="version-card-grid">${versions.map((version) => `<article class="version-card"><div class="version-card-head"><div><h3>${esc(version.label)}</h3><span class="cell-sub">版本日期 ${esc(fmtDate(version.version_date))}</span></div><span class="list-icon">${icon("file")}</span></div><p>文件：${esc(version.filename || "粘贴文本")}</p><p>来源：${esc(version.source || "未填写")}</p><p>识别章节：${esc(version.section_count ?? 0)} 个</p><p class="hash" title="原始内容 SHA-256">SHA-256 ${esc(String(version.sha256 || "").slice(0, 20))}…</p><div class="actions">${button("查看与校正", "view-version", `data-id="${id(version.id)}"`, "", "edit")}<a class="button small" href="/api/versions/${id(version.id)}/file">原始文件 ${icon("download")}</a></div></article>`).join("")}</div>` : `<section class="panel">${empty("还没有说明书版本", "先导入旧版和新版说明书，随后可查看章节并创建比对。", button("导入第一个版本", "import-version", `data-id="${id(drugId)}"`, true, "upload"))}</section>`}`
+  );
+}
+async function comparisonsPage() {
+  state.comparisons = await api("/api/comparisons");
+  return (
+    pageHeading(
+      "REVIEW QUEUE",
+      "比对与审核",
+      "逐项核查版本差异，保留复核结论与变更依据。",
+      `<a class="button primary" href="#drugs">${icon("plus")} 从药品档案创建比对</a>`,
+    ) +
+    `<section class="panel"><div class="toolbar"><div class="search-wrap">${icon("search")}<input type="search" id="comparison-search" aria-label="搜索比对任务" placeholder="搜索药品名称或版本"></div><select class="filter-select" id="comparison-status" aria-label="任务状态"><option value="all">全部任务</option><option value="pending">有待复核变更</option><option value="completed">已完成复核</option></select><span class="count-label" id="comparison-count">${state.comparisons.length} 个比对任务</span></div><div id="comparison-list">${comparisonTable(state.comparisons)}</div></section>`
+  );
+}
+function comparisonTable(items) {
+  if (!items.length)
+    return empty(
+      "暂无匹配的比对任务",
+      "在药品档案中选择两个版本，创建一份新的比对任务。",
+      '<a href="#drugs" class="button primary">前往药品档案 →</a>',
+    );
+  return `<div class="table-scroll"><table><thead><tr><th>药品 / 版本</th><th>变更数量</th><th>待复核</th><th>任务状态</th><th>创建时间</th><th></th></tr></thead><tbody>${items.map((item) => `<tr><td><a href="#comparisons/${id(item.id)}" class="cell-title">${esc(item.drug_name)}</a><span class="cell-sub">${esc(item.old_label)} → ${esc(item.new_label)}</span></td><td>${esc(item.total_changes ?? 0)} 项</td><td>${esc(item.pending_changes ?? 0)} 项</td><td>${statusTag(Number(item.pending_changes) ? "pending" : "completed")}</td><td class="nowrap muted">${esc(fmtDate(item.created_at))}</td><td><a class="button small" href="#comparisons/${id(item.id)}">打开审核 →</a></td></tr>`).join("")}</tbody></table></div>`;
+}
+async function comparisonPage(comparisonId) {
+  const result = await api(`/api/comparisons/${id(comparisonId)}`);
+  if (state.route !== `comparisons/${id(comparisonId)}`) return "";
+  state.comparison = result;
+  return comparisonMarkup();
+}
+function comparisonMarkup() {
+  const data = state.comparison;
+  const changes = data.changes || [];
+  const pending = changes.filter(
+    (change) => change.status === "pending",
+  ).length;
+  const oldVersion = data.old_version || {};
+  const newVersion = data.new_version || {};
+  const progress = changes.length
+    ? Math.round(((changes.length - pending) / changes.length) * 100)
+    : 100;
+  return (
+    `<a class="back-link" href="#comparisons">${icon("back")} 返回审核任务</a>` +
+    pageHeading(
+      "VERSION COMPARISON",
+      data.drug_name || "说明书变更审核",
+      `${changes.length} 处章节变更 · ${data.unchanged_sections || 0} 个章节内容一致 · 逐条核对后记录结论`,
+      `<div class="report-links"><a class="button" href="/api/comparisons/${id(data.id)}/export?format=html">${icon("download")} HTML 报告</a><a class="button" href="/api/comparisons/${id(data.id)}/export?format=csv">CSV</a><a class="button" href="/api/comparisons/${id(data.id)}/export?format=json">JSON</a></div>`,
+      "comparison-heading",
+    ) +
+    warnings(data.warnings) +
+    `<div class="comparison-summary"><div class="version-pair"><div class="version-pill"><span class="eyebrow">旧版说明书</span><strong>${esc(oldVersion.label || data.old_label)}</strong><small>${esc(fmtDate(oldVersion.version_date))}</small></div>${icon("arrow")}<div class="version-pill"><span class="eyebrow">新版说明书</span><strong>${esc(newVersion.label || data.new_label)}</strong><small>${esc(fmtDate(newVersion.version_date))}</small></div></div><div class="review-progress"><div class="review-progress-label"><span>审核完成度</span><strong>${changes.length - pending} / ${changes.length}</strong></div><div class="progress-track" role="progressbar" aria-label="审核完成度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><div class="progress-fill" style="width:${progress}%"></div></div></div></div><div class="filter-bar"><div class="segmented" role="group" aria-label="按审核状态筛选">${[
+      ["all", "全部变更"],
+      ["pending", "待复核"],
+      ["confirmed", "已确认"],
+      ["ignored", "已忽略"],
+    ]
+      .map(
+        ([value, label]) =>
+          `<button type="button" data-action="filter-review" data-value="${value}" aria-pressed="${state.reviewStatus === value}" class="${state.reviewStatus === value ? "active" : ""}">${label}${value === "pending" ? ` ${pending}` : ""}</button>`,
+      )
+      .join(
+        "",
+      )}</div><select id="priority-filter" class="filter-select" aria-label="按复核优先级筛选"><option value="all" ${state.priority === "all" ? "selected" : ""}>全部优先级</option><option value="high" ${state.priority === "high" ? "selected" : ""}>重点复核</option><option value="normal" ${state.priority === "normal" ? "selected" : ""}>常规复核</option></select><span class="small-hint">红色为删除 · 绿色为新增</span></div><div id="changes-list">${changesMarkup()}</div><p class="comparison-footer">重点标记用于安排复核顺序，不代表医学风险等级。HTML 报告可通过浏览器打印为 PDF。</p>`
+  );
+}
+function markedText(text) {
+  // Match untrusted plain text first; escaping before matching could split an HTML entity.
+  const value = String(text ?? "");
+  const pattern =
+    /\d+(?:\.\d+)?(?:\s*(?:mg|μg|ug|kg|g|ml|mL|L|%|毫克|微克|克|毫升|片|次|日|天))?/g;
+  let result = "";
+  let cursor = 0;
+  for (const match of value.matchAll(pattern)) {
+    result += esc(value.slice(cursor, match.index));
+    result += `<span class="numeric">${esc(match[0])}</span>`;
+    cursor = match.index + match[0].length;
+  }
+  return result + esc(value.slice(cursor));
+}
+function diffText(change, side) {
+  const text = side === "old" ? change.old_text : change.new_text;
+  if (!text) return '<span class="absent-text">该版本无此章节内容</span>';
+  const segments = change.segments;
+  if (!Array.isArray(segments) || !segments.length) return esc(text);
+  const relevant = segments.filter(
+    (segment) =>
+      segment.op === "equal" ||
+      segment.op === (side === "old" ? "delete" : "insert"),
+  );
+  // Only apply inline segments if they reconstruct this exact source; never hide source text.
+  if (relevant.map((segment) => segment.text || "").join("") !== text)
+    return esc(text);
+  return relevant
+    .map((segment) =>
+      segment.op === "equal"
+        ? esc(segment.text)
+        : `<${side === "old" ? "del" : "ins"}>${markedText(segment.text)}</${side === "old" ? "del" : "ins"}>`,
+    )
+    .join("");
+}
+function changesMarkup() {
+  const changes = state.comparison.changes || [];
+  const filtered = changes.filter(
+    (change) =>
+      (state.reviewStatus === "all" || change.status === state.reviewStatus) &&
+      (state.priority === "all" || change.priority === state.priority),
+  );
+  if (!filtered.length)
+    return `<section class="panel">${empty(changes.length ? "当前筛选下没有变更" : "两个版本未发现章节内容差异", changes.length ? "切换状态或优先级，查看其他变更。" : "已保留本次比对记录，可导出报告。", "", true)}</section>`;
+  return filtered
+    .map((change) => {
+      const index = changes.findIndex((item) => item.id === change.id) + 1;
+      const note = state.drafts.has(change.id)
+        ? state.drafts.get(change.id)
+        : change.note || "";
+      return `<article class="change-card" id="change-${id(change.id)}" data-priority="${change.priority === "high" ? "high" : "normal"}"><header class="change-card-head"><div class="change-title"><span class="change-index">${String(index).padStart(2, "0")}</span><h3>${esc(change.section_title)}</h3>${kindTag(change.kind)}${change.priority === "high" ? '<span class="tag amber">重点复核</span>' : ""}</div>${statusTag(change.status)}</header>${change.flags?.length ? `<div class="change-flags">${change.flags.map((flag) => `<span>${esc(flag)}</span>`).join("")}</div>` : ""}<div class="diff-grid"><div class="diff-column"><div class="diff-label"><span>旧版内容</span><span>${esc(change.old_location || "—")}</span></div><div class="diff-text">${diffText(change, "old")}</div></div><div class="diff-column"><div class="diff-label"><span>新版内容</span><span>${esc(change.new_location || "—")}</span></div><div class="diff-text">${diffText(change, "new")}</div></div></div><div class="review-area">${change.reviewed_at ? `<div class="review-history"><strong>${esc(change.reviewer || "本地审核员")}</strong> · ${esc(fmtDate(change.reviewed_at, true))} · 已保存上次审核记录</div>` : ""}<div class="review-controls"><div class="review-note"><label for="note-${id(change.id)}">复核意见 <span class="muted">（忽略变更时必填）</span></label><textarea id="note-${id(change.id)}" data-note-id="${id(change.id)}" maxlength="3000" rows="1" placeholder="记录变更依据或处理意见…">${esc(note)}</textarea></div><div class="actions">${change.status !== "pending" ? button("重置待复核", "review", `data-id="${id(change.id)}" data-status="pending"`) : ""}${button("忽略", "review", `data-id="${id(change.id)}" data-status="ignored"`)}${button(change.status === "confirmed" ? "保存确认意见" : "确认变更", "review", `data-id="${id(change.id)}" data-status="confirmed"`, true, "check")}</div></div></div></article>`;
+    })
+    .join("");
+}
+async function auditPage() {
+  state.audit = await api("/api/audit");
+  return (
+    pageHeading(
+      "ACTIVITY TRAIL",
+      "操作记录",
+      "记录导入、章节校正、版本比对与每次审核结论的变化。",
+      button("刷新记录", "refresh", "", "", "clock"),
+    ) +
+    `<section class="panel"><div class="toolbar"><div class="search-wrap">${icon("search")}<input id="audit-search" type="search" aria-label="搜索操作记录" placeholder="搜索操作、对象或记录内容"></div><span class="count-label" id="audit-count">${state.audit.length} 条记录</span></div><div id="audit-list">${auditTable(state.audit)}</div></section>`
+  );
+}
+function auditTable(items) {
+  if (!items.length)
+    return empty(
+      "暂无匹配的操作记录",
+      "建立药品、导入版本和审核变更后，将在此保留操作过程。",
+      "",
+      true,
+    );
+  return `<div class="table-scroll"><table><thead><tr><th>时间</th><th>操作</th><th>操作对象</th><th>记录内容</th><th>记录人</th></tr></thead><tbody>${items.map((item) => `<tr><td class="nowrap muted">${esc(fmtDate(item.created_at, true))}</td><td class="nowrap">${esc(auditLabel(item.action))}</td><td><span class="tag gray">${esc({ drug: "药品", version: "版本", comparison: "比对", change: "变更" }[item.entity_type] || item.entity_type)} #${esc(item.entity_id)}</span></td><td class="audit-detail">${esc(detailText(item.detail))}</td><td class="nowrap muted">${esc(item.actor)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function newDrugModal() {
+  showModal(
+    "建立药品档案",
+    `<form id="drug-form"><div class="help-box">同一药品的不同说明书版本应放在同一档案中，便于准确比对。</div><div class="form-grid"><div class="field span-2"><label for="drug-name">药品名称 <span class="required">*</span></label><input id="drug-name" name="name" maxlength="200" required placeholder="例如：某药品片剂"></div><div class="field"><label for="drug-manufacturer">生产厂家</label><input id="drug-manufacturer" name="manufacturer" maxlength="200" placeholder="填写说明书标示厂家"></div><div class="field"><label for="drug-specification">药品规格</label><input id="drug-specification" name="specification" maxlength="200" placeholder="按说明书填写"></div><div class="field span-2"><label for="drug-approval">批准文号</label><input id="drug-approval" name="approval_number" maxlength="100" placeholder="可选"></div><div class="field span-2"><label for="drug-notes">备注</label><textarea id="drug-notes" name="notes" maxlength="3000" placeholder="例如：资料用途、来源说明"></textarea></div></div><div class="form-actions">${button("取消", "close-modal")}<button class="button primary" type="submit">${icon("plus")} 建立档案</button></div></form>`,
+  );
+}
+function importModal(drugId) {
+  showModal(
+    "导入说明书版本",
+    `<form id="import-form" data-drug-id="${id(drugId)}"><div class="form-grid"><div class="field"><label for="version-label">版本名称 <span class="required">*</span></label><input id="version-label" name="label" required maxlength="120" placeholder="例如：2026 年修订版"></div><div class="field"><label for="version-date">版本日期 <span class="required">*</span></label><input id="version-date" name="version_date" type="date" required></div><div class="field span-2"><label for="version-source">资料来源 <span class="required">*</span></label><input id="version-source" name="source" required maxlength="1000" placeholder="文件出处、公告链接或资料提供方"><small>来源信息会随比对报告保留，请填写可追溯的出处。</small></div></div><div class="segmented import-tabs" role="group" aria-label="导入方式"><button type="button" class="active" data-action="import-tab" data-value="file" aria-pressed="true">${icon("upload")} 上传文件</button><button type="button" data-action="import-tab" data-value="text" aria-pressed="false">${icon("edit")} 粘贴文本</button></div><input type="hidden" id="import-mode" value="file"><div id="import-file-pane" class="tab-pane"><div class="upload-area">${icon("upload")}<label for="version-file">选择说明书文件</label><input id="version-file" name="file" type="file" required accept=".pdf,.docx,.txt"><small>纯文字 PDF（不含图片）/ DOCX / TXT · 最大 10 MB</small></div><p class="field-hint" style="margin-top:12px">含图片的 PDF（包括扫描件或带图片页眉的文档）请先转换为经核对的 DOCX 或 TXT。导入后可手动校正章节识别结果。</p></div><div id="import-text-pane" class="tab-pane" hidden><div class="field"><label for="version-text">说明书原文 <span class="required">*</span></label><textarea id="version-text" name="text" disabled rows="10" placeholder="请保留章节标题，如：&#10;【药品名称】&#10;…&#10;【用法用量】&#10;…"></textarea><small>请使用有权使用的资料；模拟内容应明确标注。</small></div></div><div class="form-actions">${button("取消", "close-modal")}<button class="button primary" type="submit">${icon("upload")} 导入并识别章节</button></div></form>`,
+  );
+}
+async function newComparisonModal(drugId) {
+  const versions = await api(`/api/drugs/${id(drugId)}/versions`);
+  if (versions.length < 2) {
+    toast("请先为该药品导入至少两个版本。", true);
+    return;
+  }
+  const sorted = [...versions].sort(
+    (a, b) =>
+      String(a.version_date).localeCompare(String(b.version_date)) ||
+      a.id - b.id,
+  );
+  const options = (selected) =>
+    sorted
+      .map(
+        (version) =>
+          `<option value="${id(version.id)}" ${version.id === selected ? "selected" : ""}>${esc(version.label)} · ${esc(version.version_date)}</option>`,
+      )
+      .join("");
+  showModal(
+    "创建版本比对",
+    `<form id="comparison-form"><div class="help-box">请选择同一药品的旧版与新版。创建比对后，所用版本的章节内容将固定，后续修订请另行导入新版本。</div><div class="field"><label for="old-version">旧版说明书</label><select id="old-version" name="old_version_id" required>${options(sorted[sorted.length - 2].id)}</select></div><div class="field"><label for="new-version">新版说明书</label><select id="new-version" name="new_version_id" required>${options(sorted[sorted.length - 1].id)}</select></div><p class="field-hint">建议先查看章节识别结果，确认文档提取完整。新版日期不能早于旧版。</p><div class="form-actions">${button("取消", "close-modal")}<button type="submit" class="button primary">${icon("compare")} 生成章节比对</button></div></form>`,
+  );
+}
+function sectionEditor(section, index) {
+  return `<div class="section-editor"><div class="section-editor-head"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><input name="section_title" aria-label="第 ${index + 1} 个章节标题" required maxlength="200" value="${esc(section.title)}"><button class="icon-button" type="button" data-action="remove-section" aria-label="移除第 ${index + 1} 个章节">×</button></div><textarea name="section_text" rows="4" aria-label="第 ${index + 1} 个章节正文">${esc(section.text)}</textarea></div>`;
+}
+async function viewVersionModal(versionId) {
+  const version = await api(`/api/versions/${id(versionId)}`);
+  state.modalVersion = version;
+  showModal(
+    version.label,
+    `<div class="version-meta"><span>版本日期 ${esc(version.version_date)}</span><span>${esc(version.filename || "粘贴文本")}</span><span>${version.sections?.length || 0} 个章节</span></div>${warnings(version.warnings)}<div class="segmented import-tabs" role="group" aria-label="版本查看方式"><button type="button" class="active" data-action="version-tab" data-value="sections" aria-pressed="true">章节与校正</button><button type="button" data-action="version-tab" data-value="raw" aria-pressed="false">原始提取文本</button><button type="button" data-action="version-tab" data-value="source" aria-pressed="false">来源与文件</button></div><div class="tab-pane" id="version-sections-pane"><div class="help-box">检查标题和正文是否完整。尚未参与比对的版本可以校正章节；已参与比对的版本会锁定，以保留原有审核依据。校正不会改写原始文件。</div><form id="sections-form" data-version-id="${id(versionId)}"><div id="section-editors">${(version.sections || []).map(sectionEditor).join("")}</div><div class="editor-actions">${button("添加章节", "add-section", "", "", "plus")}</div><div class="form-actions sticky-form-actions">${button("关闭", "close-modal")}<button type="submit" class="button primary">${icon("check")} 保存章节校正</button></div></form></div><div class="tab-pane" id="version-raw-pane" hidden><pre class="raw-text">${esc(version.text)}</pre></div><div class="tab-pane" id="version-source-pane" hidden><div class="field"><span class="metadata-label">资料来源</span><div class="metadata-value">${esc(version.source || "未填写")}</div></div><div class="field"><span class="metadata-label">原始文件 SHA-256</span><div class="hash">${esc(version.sha256)}</div></div><div class="field"><span class="metadata-label">导入时间</span><div class="metadata-value">${esc(fmtDate(version.created_at, true))}</div></div><a class="button" href="/api/versions/${id(version.id)}/file">${icon("download")} 下载原始文件</a></div>`,
+    true,
+  );
+  state.modalVersion = version;
+}
+
+document.addEventListener("input", (event) => {
+  const element = event.target;
+  if (element.dataset.noteId) {
+    state.drafts.set(Number(element.dataset.noteId), element.value);
+    return;
+  }
+  if (element.id === "drug-search") {
+    const query = element.value.toLocaleLowerCase().trim();
+    const filtered = state.drugs.filter((item) =>
+      [item.name, item.manufacturer, item.approval_number].some((value) =>
+        String(value || "")
+          .toLocaleLowerCase()
+          .includes(query),
+      ),
+    );
+    $("#drug-list").innerHTML = drugTable(filtered);
+    $("#drug-count").textContent = `${filtered.length} 个药品档案`;
+  }
+  if (element.id === "comparison-search") filterComparisonTable();
+  if (element.id === "audit-search") {
+    const query = element.value.toLocaleLowerCase().trim();
+    const filtered = state.audit.filter((item) =>
+      [
+        auditLabel(item.action),
+        item.entity_type,
+        item.entity_id,
+        item.actor,
+        detailText(item.detail),
+      ].some((value) =>
+        String(value || "")
+          .toLocaleLowerCase()
+          .includes(query),
+      ),
+    );
+    $("#audit-list").innerHTML = auditTable(filtered);
+    $("#audit-count").textContent = `${filtered.length} 条记录`;
+  }
+});
+function filterComparisonTable() {
+  const query = $("#comparison-search").value.toLocaleLowerCase().trim();
+  const status = $("#comparison-status").value;
+  const filtered = state.comparisons.filter(
+    (item) =>
+      [item.drug_name, item.old_label, item.new_label].some((value) =>
+        String(value || "")
+          .toLocaleLowerCase()
+          .includes(query),
+      ) &&
+      (status === "all" ||
+        (status === "pending"
+          ? Number(item.pending_changes) > 0
+          : !Number(item.pending_changes))),
+  );
+  $("#comparison-list").innerHTML = comparisonTable(filtered);
+  $("#comparison-count").textContent = `${filtered.length} 个比对任务`;
+}
+document.addEventListener("change", (event) => {
+  if (event.target.id === "comparison-status") filterComparisonTable();
+  if (event.target.id === "priority-filter") {
+    state.priority = event.target.value;
+    $("#changes-list").innerHTML = changesMarkup();
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const trigger = event.target.closest("[data-action]");
+  if (!trigger || trigger.disabled) return;
+  const action = trigger.dataset.action;
+  try {
+    if (action === "new-drug") return newDrugModal();
+    if (action === "close-modal") return closeModal();
+    if (action === "refresh") return navigate();
+    if (action === "import-version") return importModal(trigger.dataset.id);
+    if (action === "filter-review") {
+      state.reviewStatus = trigger.dataset.value;
+      $$('[data-action="filter-review"]').forEach((button) => {
+        const active = button.dataset.value === state.reviewStatus;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      $("#changes-list").innerHTML = changesMarkup();
+      return;
+    }
+    if (action === "import-tab") {
+      const mode = trigger.dataset.value;
+      $("#import-mode").value = mode;
+      $$('[data-action="import-tab"]').forEach((button) => {
+        const active = button.dataset.value === mode;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      $("#import-file-pane").hidden = mode !== "file";
+      $("#import-text-pane").hidden = mode !== "text";
+      $("#version-file").disabled = mode !== "file";
+      $("#version-file").required = mode === "file";
+      $("#version-text").disabled = mode !== "text";
+      $("#version-text").required = mode === "text";
+      return;
+    }
+    if (action === "version-tab") {
+      const tab = trigger.dataset.value;
+      $$('[data-action="version-tab"]').forEach((button) => {
+        const active = button.dataset.value === tab;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      ["sections", "raw", "source"].forEach((name) => {
+        $(`#version-${name}-pane`).hidden = name !== tab;
+      });
+      return;
+    }
+    if (action === "add-section") {
+      $("#section-editors").insertAdjacentHTML(
+        "beforeend",
+        sectionEditor(
+          { title: "新章节", text: "" },
+          $$(".section-editor").length,
+        ),
+      );
+      $$(".section-editor").at(-1).querySelector("input").focus();
+      return;
+    }
+    if (action === "remove-section") {
+      if ($$(".section-editor").length <= 1) {
+        modalError("至少保留一个章节。");
+        return;
+      }
+      const editor = trigger.closest(".section-editor");
+      if (
+        $("textarea", editor).value.trim() &&
+        !window.confirm(
+          "移除此章节会从结构化版本中删除其正文，原始文件仍保留。确认移除？",
+        )
+      )
+        return;
+      editor.remove();
+      return;
+    }
+    trigger.disabled = true;
+    if (action === "demo") {
+      const data = await api("/api/demo", { method: "POST" });
+      toast("模拟示例已就绪，所有示例内容均不用于临床。");
+      const next = `comparisons/${id(data.comparison_id)}`;
+      if (state.route === next) await navigate();
+      else location.hash = next;
+    } else if (action === "view-version")
+      await viewVersionModal(trigger.dataset.id);
+    else if (action === "new-comparison")
+      await newComparisonModal(trigger.dataset.id);
+    else if (action === "review") await saveReview(trigger);
+  } catch (error) {
+    if (modal.open) modalError(error.message);
+    else toast(error.message, true);
+  } finally {
+    if (trigger.isConnected) trigger.disabled = false;
+  }
+});
+
+async function saveReview(trigger) {
+  const change = state.comparison.changes.find(
+    (item) => item.id === Number(trigger.dataset.id),
+  );
+  if (!change) throw new Error("变更记录已更新，请刷新页面。");
+  const note = $(`#note-${id(change.id)}`).value.trim();
+  const status = trigger.dataset.status;
+  if (status === "ignored" && !note) {
+    $(`#note-${id(change.id)}`).focus();
+    throw new Error("请填写忽略原因后再保存。");
+  }
+  const card = $(`#change-${id(change.id)}`);
+  const controls = $$("button, textarea", card);
+  controls.forEach((element) => {
+    element.disabled = true;
+  });
+  try {
+    await api(`/api/changes/${id(change.id)}`, {
+      method: "PATCH",
+      body: { status, note, revision: change.revision },
+    });
+    state.drafts.delete(change.id);
+    state.comparison = await api(`/api/comparisons/${id(state.comparison.id)}`);
+    const scrollY = window.scrollY;
+    main.innerHTML = comparisonMarkup();
+    window.scrollTo(0, scrollY);
+    toast("审核意见已保存，操作记录已更新。");
+    const focusTarget =
+      $(`#note-${id(change.id)}`) || $('[data-action="filter-review"].active');
+    if (focusTarget) focusTarget.focus({ preventScroll: true });
+  } catch (error) {
+    if (error.status === 409) {
+      state.comparison = await api(
+        `/api/comparisons/${id(state.comparison.id)}`,
+      );
+      main.innerHTML = comparisonMarkup();
+      throw new Error(
+        "此变更已被其他页面更新，已载入最新状态并保留你的未提交意见。请核对后重新保存。",
+      );
+    }
+    throw error;
+  } finally {
+    controls.forEach((element) => {
+      element.disabled = false;
+    });
+  }
+}
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (
+    !["drug-form", "import-form", "comparison-form", "sections-form"].includes(
+      form.id,
+    )
+  )
+    return;
+  event.preventDefault();
+  if (form.dataset.busy === "true") return;
+  const submit = $('button[type="submit"]', form);
+  const previousText = submit.innerHTML;
+  const formData = new FormData(form);
+  form.dataset.busy = "true";
+  submit.disabled = true;
+  submit.innerHTML = '<span class="spinner"></span> 正在处理…';
+  $(".dialog-error", modal)?.remove();
+  try {
+    if (form.id === "drug-form") {
+      const payload = Object.fromEntries(formData);
+      Object.keys(payload).forEach((key) => {
+        payload[key] = payload[key].trim();
+      });
+      if (!payload.name) throw new Error("请输入药品名称。");
+      const drug = await api("/api/drugs", { method: "POST", body: payload });
+      closeModal();
+      toast("药品档案已建立，现在可以导入说明书。");
+      location.hash = `drugs/${id(drug.id)}`;
+    } else if (form.id === "import-form") {
+      const drugId = form.dataset.drugId;
+      const mode = $("#import-mode").value;
+      let version;
+      if (mode === "file") {
+        const file = formData.get("file");
+        if (!file || !file.size) throw new Error("请选择非空的说明书文件。");
+        if (file.size > 10 * 1024 * 1024)
+          throw new Error("文件超过 10 MB，请缩减后重试。");
+        if (!/\.(pdf|docx|txt)$/i.test(file.name))
+          throw new Error("请选择 PDF、DOCX 或 TXT 文件。");
+        version = await api(`/api/drugs/${id(drugId)}/versions`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const payload = {
+          label: formData.get("label").trim(),
+          version_date: formData.get("version_date"),
+          source: formData.get("source").trim(),
+          text: formData.get("text"),
+        };
+        if (!payload.text.trim()) throw new Error("请粘贴说明书原文。");
+        version = await api(`/api/drugs/${id(drugId)}/versions/text`, {
+          method: "POST",
+          body: payload,
+        });
+      }
+      closeModal();
+      toast("版本已导入，请检查章节识别结果。");
+      await navigate();
+      await viewVersionModal(version.id);
+    } else if (form.id === "comparison-form") {
+      const oldId = Number(formData.get("old_version_id"));
+      const newId = Number(formData.get("new_version_id"));
+      if (oldId === newId) throw new Error("请选择两个不同的说明书版本。");
+      const result = await api("/api/comparisons", {
+        method: "POST",
+        body: { old_version_id: oldId, new_version_id: newId },
+      });
+      closeModal();
+      toast("比对已生成，开始逐条复核。");
+      const route = `comparisons/${id(result.id)}`;
+      if (state.route === route) await navigate();
+      else location.hash = route;
+    } else if (form.id === "sections-form") {
+      const sections = $$(".section-editor", form).map((editor) => ({
+        title: $("input", editor).value.trim(),
+        text: $("textarea", editor).value,
+      }));
+      if (sections.some((section) => !section.title))
+        throw new Error("每个章节都需要填写标题。");
+      if (!sections.length || !sections.some((section) => section.text.trim()))
+        throw new Error("请至少保留一个有正文的章节。");
+      const versionId = form.dataset.versionId;
+      await api(`/api/versions/${id(versionId)}/sections`, {
+        method: "PUT",
+        body: { sections },
+      });
+      toast("章节校正已保存，原始文件保持不变。");
+      await navigate();
+      await viewVersionModal(versionId);
+    }
+  } catch (error) {
+    modalError(error.message);
+  } finally {
+    form.dataset.busy = "false";
+    if (submit.isConnected) {
+      submit.disabled = false;
+      submit.innerHTML = previousText;
+    }
+  }
+});
+
+navigate();
+
+
+===== 文件：app/reports.py =====
+"""Portable review reports. All human-supplied HTML is escaped on output."""
+
+from __future__ import annotations
+
+import csv
+from datetime import datetime, timezone
+from html import escape
+import io
+import json
+from typing import Any
+
+
+STATUSES = {"pending": "待复核", "confirmed": "已确认", "ignored": "已忽略"}
+KINDS = {"added": "新增章节", "removed": "删除章节", "modified": "内容修改"}
+PRIORITIES = {"high": "重点关注", "normal": "常规"}
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _html(value: Any) -> str:
+    return escape(_text(value), quote=True)
+
+
+def _csv_cell(value: Any) -> str:
+    """Prevent spreadsheet applications interpreting untrusted cells as formulae.
+
+    Leading whitespace can hide a formula marker, and tab/CR/LF themselves are
+    unsafe leading characters in some spreadsheet importers. Prefix the entire
+    original cell with a quote so the original content remains readable.
+    """
+    text = _text(value)
+    trimmed = text.lstrip(" \t\r\n\v\f\ufeff")
+    if (text[:1] in ("\t", "\r", "\n")) or (
+        trimmed and trimmed[0] in "=+-@"
+    ):
+        return "'" + text
+    return text
+
+
+def _provenance(version: dict, label: str) -> str:
+    fields = (
+        ("版本名称", version.get("label")),
+        ("版本日期", version.get("version_date")),
+        ("资料来源", version.get("source")),
+        ("原始文件", version.get("filename")),
+        ("导入时间", version.get("created_at")),
+        ("SHA-256", version.get("sha256")),
+    )
+    rows = "".join(
+        f"<dt>{_html(key)}</dt><dd>{_html(value) or '—'}</dd>"
+        for key, value in fields
+    )
+    warnings = version.get("warnings") or []
+    warning_html = "".join(f"<li>{_html(w)}</li>" for w in warnings)
+    if warning_html:
+        warning_html = f'<ul class="warning">{warning_html}</ul>'
+    return f'<section class="version"><h3>{_html(label)}</h3><dl>{rows}</dl>{warning_html}</section>'
+
+
+def _change_html(change: dict, index: int) -> str:
+    status = _text(change.get("status", "pending"))
+    flags = change.get("flags") or []
+    flag_html = "".join(f'<span class="flag">{_html(flag)}</span>' for flag in flags)
+    segments = []
+    for segment in change.get("segments") or []:
+        text = _html(segment.get("text", ""))
+        op = segment.get("op")
+        if op == "delete":
+            segments.append(f"<del>{text}</del>")
+        elif op == "insert":
+            segments.append(f"<ins>{text}</ins>")
+        else:
+            segments.append(text)
+    inline = (
+        '<details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary>'
+        f'<pre class="inline-diff">{"".join(segments)}</pre></details>'
+        if segments else ""
+    )
+    return f"""
+    <article class="change">
+      <header class="change-title"><h3>{index:02d} · {_html(change.get('section_title', '未命名章节'))}</h3>
+      <span class="badge">{_html(KINDS.get(change.get('kind'), change.get('kind', '')))}</span>
+      <span class="badge">{_html(PRIORITIES.get(change.get('priority'), change.get('priority', '')))}</span>
+      <span class="badge">{_html(STATUSES.get(status, status))}</span></header>
+      <div class="flags">{flag_html}</div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">{_html(change.get('old_location')) or '无对应章节'}</p>
+          <pre>{_html(change.get('old_text')) or '（无）'}</pre></section>
+        <section><h4>新版原文</h4><p class="location">{_html(change.get('new_location')) or '无对应章节'}</p>
+          <pre>{_html(change.get('new_text')) or '（无）'}</pre></section>
+      </div>
+      {inline}
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：{_html(STATUSES.get(status, status))}　·　操作员：{_html(change.get('reviewer')) or '—'}　·　记录修订号：{_html(change.get('revision', 0))}</p>
+        <p>复核时间：{_html(change.get('reviewed_at')) or '尚未复核'}</p>
+        <p class="note">{_html(change.get('note')) or '未填写审核意见'}</p>
+      </section>
+    </article>"""
+
+
+def _html_report(comparison: dict, exported_at: str) -> bytes:
+    changes = comparison.get("changes") or []
+    counts = {key: sum(c.get("status", "pending") == key for c in changes) for key in STATUSES}
+    old = comparison.get("old_version") or {}
+    new = comparison.get("new_version") or {}
+    warnings = "".join(f"<li>{_html(w)}</li>" for w in comparison.get("warnings") or [])
+    warning_block = f'<aside class="warning"><strong>比对提示</strong><ul>{warnings}</ul></aside>' if warnings else ""
+    blocks = "".join(_change_html(c, i + 1) for i, c in enumerate(changes))
+    if not blocks:
+        blocks = '<section class="empty">未检出章节内容差异。此结果不等同于临床或法规一致性结论。</section>'
+    html = f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>说明书变更审核报告 #{_html(comparison.get('id'))}</title>
+<style>
+*{{box-sizing:border-box}}body{{margin:0;background:#f3f6f9;color:#1c3042;font:14px/1.7 system-ui,-apple-system,"Microsoft YaHei",sans-serif}}
+main{{max-width:1150px;margin:32px auto;background:white;padding:40px;border-radius:16px}}h1{{margin:0 0 10px;font-size:28px;line-height:1.4}}h2{{margin:28px 0 14px;font-size:20px}}h3,h4{{margin:0 0 8px}}
+.eyebrow{{color:#087f85;font-size:12px;letter-spacing:2px}}.muted,.location{{color:#5e6f7c}}.location{{font-size:12px;margin-top:0}}
+.stats,.columns,.versions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}}.stats{{grid-template-columns:repeat(4,minmax(0,1fr));margin:25px 0}}
+.stat,.version{{padding:18px;border:1px solid #dce5ec;border-radius:10px}}.stat strong{{display:block;font-size:26px;color:#087f85}}dl{{display:grid;grid-template-columns:76px minmax(0,1fr);gap:6px 10px;margin:0}}dt{{color:#5e6f7c}}dd{{margin:0;overflow-wrap:anywhere}}
+.change{{border:1px solid #dce5ec;border-radius:10px;margin:18px 0;padding:22px}}.change-title{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}.change-title h3{{margin-right:auto}}.badge,.flag{{display:inline-block;border-radius:4px;padding:2px 7px;font-size:12px;background:#eaf2f7}}.flag{{background:#fff0d4;color:#78510a;margin:0 5px 8px 0}}.flags{{margin-top:8px}}
+pre{{font:inherit;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:14px;border-radius:6px;margin:0}}.review{{margin-top:16px;border-top:1px solid #dce5ec;padding-top:14px}}.review p{{margin:5px 0}}.note{{white-space:pre-wrap;overflow-wrap:anywhere}}details{{margin-top:14px}}summary{{cursor:pointer;color:#087f85}}del{{background:#fee4e4;text-decoration:line-through}}ins{{background:#d9f3e4;text-decoration:underline}}.warning{{background:#fff7e9;padding:14px;border-radius:8px}}.empty{{padding:28px;border:1px dashed #a8c4d2;border-radius:8px}}footer{{margin-top:30px;border-top:1px solid #dce5ec;padding-top:15px;color:#5e6f7c;font-size:12px}}.print-tip{{font-size:12px;color:#5e6f7c}}
+@media(max-width:700px){{main{{padding:20px;margin:0;border-radius:0}}.columns,.versions{{grid-template-columns:1fr}}.stats{{grid-template-columns:repeat(2,1fr)}}}}
+@media print{{@page{{size:A4;margin:15mm}}body{{background:white;font-size:10pt}}main{{padding:0;margin:0;max-width:none}}.print-tip{{display:none}}.change{{break-inside:auto;border-radius:0}}.change-title,.review{{break-inside:avoid}}pre{{font-size:9pt}}a{{color:inherit}}details{{display:none}}}}
+</style></head><body><main>
+<div class="eyebrow">MEDLABEL REVIEW · V1.0</div>
+<h1>药品说明书版本比对与变更审核报告</h1>
+<p><strong>{_html(comparison.get('drug_name', ''))}</strong> · 比对任务 #{_html(comparison.get('id'))}</p>
+<p class="muted">任务创建：{_html(comparison.get('created_at'))}　｜　导出时间：{_html(exported_at)}（UTC）</p>
+<p class="print-tip">可使用浏览器“打印 / 另存为 PDF”保存此报告。</p>
+<div class="stats"><div class="stat"><strong>{len(changes)}</strong>变更章节</div><div class="stat"><strong>{counts['pending']}</strong>待复核</div><div class="stat"><strong>{counts['confirmed']}</strong>已确认</div><div class="stat"><strong>{counts['ignored']}</strong>已忽略</div></div>
+<p class="muted">未变更章节：{_html(comparison.get('unchanged_sections', 0))}。本报告反映导出时点的审核状态。</p>
+<h2>资料来源与版本追溯</h2><div class="versions">{_provenance(old, '旧版')}{_provenance(new, '新版')}</div>
+{warning_block}<h2>章节差异与审核意见</h2>{blocks}
+<footer>药品说明书版本比对与变更审核系统 V1.0。此工具用于文本比对与记录整理，不判断临床正确性或替代专业审核。操作员名称是本地配置的记录标签，未经身份认证；本报告不构成电子签名。行号指向提取文本，手工校正章节的位置应结合原始文件复核。文件 SHA-256 用于核对原始文件内容。</footer>
+</main></body></html>"""
+    return html.encode("utf-8")
+
+
+def _csv_report(comparison: dict, exported_at: str) -> bytes:
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+    writer.writerow([
+        "任务ID", "药品名称", "导出时间UTC", "旧版名称", "旧版日期", "旧版来源", "旧版文件", "旧版SHA256",
+        "新版名称", "新版日期", "新版来源", "新版文件", "新版SHA256", "章节", "变化类型", "关注级别",
+        "旧版位置", "新版位置", "旧版内容", "新版内容", "关注标记", "审核状态", "审核意见", "本地操作员（未认证）", "复核时间", "修订号",
+    ])
+    old, new = comparison.get("old_version") or {}, comparison.get("new_version") or {}
+    common = [comparison.get("id"), comparison.get("drug_name"), exported_at]
+    for version in (old, new):
+        common.extend(version.get(key) for key in ("label", "version_date", "source", "filename", "sha256"))
+    changes = comparison.get("changes") or []
+    if not changes:
+        writer.writerow([_csv_cell(value) for value in common + ["未检出章节内容差异"] + [""] * 12])
+    for change in changes:
+        row = common + [
+            change.get("section_title"), KINDS.get(change.get("kind"), change.get("kind")),
+            PRIORITIES.get(change.get("priority"), change.get("priority")),
+            change.get("old_location"), change.get("new_location"), change.get("old_text"), change.get("new_text"),
+            "；".join(_text(flag) for flag in change.get("flags") or []),
+            STATUSES.get(change.get("status"), change.get("status")), change.get("note"),
+            change.get("reviewer"), change.get("reviewed_at"), change.get("revision"),
+        ]
+        writer.writerow([_csv_cell(value) for value in row])
+    return stream.getvalue().encode("utf-8-sig")
+
+
+def export_report(comparison: dict, format: str) -> tuple[bytes, str, str]:
+    """Return a ready-to-download body, content type, and safe ASCII filename."""
+    exported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    identifier = str(comparison.get("id", "report"))
+    safe_id = "".join(char for char in identifier if char.isascii() and (char.isalnum() or char in "-_")) or "report"
+    if format == "html":
+        return _html_report(comparison, exported_at), "text/html; charset=utf-8", f"comparison-{safe_id}.html"
+    if format == "csv":
+        return _csv_report(comparison, exported_at), "text/csv; charset=utf-8", f"comparison-{safe_id}.csv"
+    if format == "json":
+        payload = dict(comparison)
+        payload["exported_at"] = exported_at
+        return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), "application/json; charset=utf-8", f"comparison-{safe_id}.json"
+    raise ValueError("不支持的导出格式，请选择 html、csv 或 json。")
+
+
+===== 文件：app/demo.py =====
+"""Fictional demonstration material, never real prescribing information."""
+DRUG = {
+    "name": "示例药品 A（模拟）",
+    "manufacturer": "虚构教学制药公司",
+    "specification": "仅用于软件演示",
+    "approval_number": "SIMULATED-NOT-APPROVED",
+    "notes": "模拟示例，不用于临床。所有名称、数据和变更均为虚构。",
+}
+
+OLD_TEXT = """模拟示例，不用于临床。以下为虚构说明书，用于演示文本比对。
+【药品名称】
+示例药品 A（模拟）
+【成份】
+虚构成份甲；本示例不对应任何真实药物。
+【性状】
+演示用白色片状物。
+【适应症】
+仅用于演示说明书软件，不具有任何适应症。
+【用法用量】
+测试字段：数值 10 mg。此字段为虚构测试数据，禁止据此用药。
+【禁忌】
+演示规则甲：禁止用于临床。
+【不良反应】
+无真实临床数据；待补充演示字段。
+【贮藏】
+测试温度字段：20 ℃。此字段不构成储存指导。
+【包装】
+模拟包装 A。
+【说明书修订日期】
+2026-01-01
+"""
+
+NEW_TEXT = """模拟示例，不用于临床。以下为虚构说明书，用于演示文本比对。
+【药品名称】
+示例药品 A（模拟）
+【成份】
+虚构成份甲；本示例不对应任何真实药物。
+【性状】
+演示用白色片状物。
+【适应症】
+仅用于演示说明书软件，不具有任何适应症。
+【用法用量】
+测试字段：数值 15 mg。此字段为虚构测试数据，禁止据此用药。
+【禁忌】
+演示规则甲：禁止用于临床。新增演示规则乙：不得替代药师审核。
+【不良反应】
+无真实临床数据；新增虚构字段用于演示变化定位。
+【注意事项】
+请由人工审核软件识别出的差异；本材料为模拟示例，不用于临床。
+【贮藏】
+测试温度字段：20 ℃。此字段不构成储存指导。
+【说明书修订日期】
+2026-06-01
+"""
+

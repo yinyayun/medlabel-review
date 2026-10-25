@@ -88,6 +88,7 @@ scripts/           启动及浏览器验收脚本
 
 ## 项目与软著材料
 
+- [软著文档包：Word、PDF、真实截图和源程序鉴别材料](docs/registration/README.md)
 - [用户操作手册](docs/用户操作手册.md)
 - [软件设计说明书](docs/软件设计说明书.md)
 - [软著材料准备清单](docs/软著材料准备清单.md)

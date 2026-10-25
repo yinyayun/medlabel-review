@@ -1,0 +1,573 @@
+{
+  "software": "药品说明书版本比对与变更审核系统",
+  "version": "V1.0",
+  "baseline_commit": "98e406f93f8777fc416014cee05d1737966fab4e",
+  "verified_at_utc": "2026-10-25T23:40:52+00:00",
+  "source_manifest_sha256": "142f5cadd4e2e6a466ce4f79ef5353d5963fd3a3ae3faa29645d3dc16aa3aded",
+  "documents": [
+    {
+      "document": "01_用户操作说明书",
+      "pages": 18,
+      "characters": 8423,
+      "word": {
+        "path": "word/01_用户操作说明书.docx",
+        "sha256": "68c7de4e2afdb943dc0290e8fc06baa26f05d2aa241d902ada0613f499e7bbfd"
+      },
+      "pdf": {
+        "path": "pdf/01_用户操作说明书.pdf",
+        "sha256": "976a5630bff4407cddd7e5b3b6d0b492cbe3a076fc2889a3b350570ec03451da"
+      }
+    },
+    {
+      "document": "02_软件设计说明书",
+      "pages": 10,
+      "characters": 8979,
+      "word": {
+        "path": "word/02_软件设计说明书.docx",
+        "sha256": "40feb26f9aaadec408e6aad717976b4b9ec5ff136b253936a761543ba160c51e"
+      },
+      "pdf": {
+        "path": "pdf/02_软件设计说明书.pdf",
+        "sha256": "c48d5b7d5e5dd2c7252375e42c206a9eafdc5a82539b2dbde2d38a967360834e"
+      }
+    },
+    {
+      "document": "03_登记申请信息草稿",
+      "pages": 4,
+      "characters": 3244,
+      "word": {
+        "path": "word/03_登记申请信息草稿.docx",
+        "sha256": "72c47022db9e09b6e7badc9252c74c085d926986bca4bad06119cd6f3b7ff3ca"
+      },
+      "pdf": {
+        "path": "pdf/03_登记申请信息草稿.pdf",
+        "sha256": "506ad7219baa3780ce8c1841824dd9491750e725c6d92943fb1f6d21be385839"
+      }
+    },
+    {
+      "document": "04_提交材料核对单",
+      "pages": 4,
+      "characters": 2781,
+      "word": {
+        "path": "word/04_提交材料核对单.docx",
+        "sha256": "683455659a660d29dd3616445b8c3a1e8f24415aa23001852bde0b12790e5349"
+      },
+      "pdf": {
+        "path": "pdf/04_提交材料核对单.pdf",
+        "sha256": "7a82904608743e7b5d0a5dd0a49a3cb7d69471d111ae9a15996f8385b73bfa59"
+      }
+    },
+    {
+      "document": "05_源程序鉴别材料",
+      "pages": 60,
+      "characters": 148408,
+      "word": {
+        "path": "word/05_源程序鉴别材料.docx",
+        "sha256": "3e6375a9192a4c3ce5201ee8cc8715670a2d2205444cd3c97de2b6c9353b893e"
+      },
+      "pdf": {
+        "path": "pdf/05_源程序鉴别材料.pdf",
+        "sha256": "1818e25f22f57265a2efa54bfedb365cdc1092b03ac0b65b56ed0b0e967bff00"
+      }
+    },
+    {
+      "document": "06_源程序编排说明",
+      "pages": 3,
+      "characters": 1693,
+      "word": {
+        "path": "word/06_源程序编排说明.docx",
+        "sha256": "2032429f4b221e6e5a7516131b58747a82531ee1aec4b904ce5baa4cdbc2a771"
+      },
+      "pdf": {
+        "path": "pdf/06_源程序编排说明.pdf",
+        "sha256": "70d0d765f22fa91fb2c75f5018c8f437d514c64bb0d57810c0a5ac2e0e5dfff8"
+      }
+    }
+  ],
+  "markdown_image_references": [
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/01_dashboard.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/02_drugs.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/03_drug_form.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/04_versions.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/05_import_file.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/06_import_text.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/08_raw_text.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/09_source.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/07_sections.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/10_compare_form.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/11_comparison.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/12_reviewed.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/13_report.png"
+    },
+    {
+      "markdown": "source/01_用户操作说明书.md",
+      "target": "../assets/14_audit.png"
+    }
+  ],
+  "source_pdf_pages": [
+    {
+      "submission_page": 1,
+      "full_layout_page": 1,
+      "display_rows": 55,
+      "first_display_row": 1,
+      "last_display_row": 55
+    },
+    {
+      "submission_page": 2,
+      "full_layout_page": 2,
+      "display_rows": 55,
+      "first_display_row": 56,
+      "last_display_row": 110
+    },
+    {
+      "submission_page": 3,
+      "full_layout_page": 3,
+      "display_rows": 55,
+      "first_display_row": 111,
+      "last_display_row": 165
+    },
+    {
+      "submission_page": 4,
+      "full_layout_page": 4,
+      "display_rows": 55,
+      "first_display_row": 166,
+      "last_display_row": 220
+    },
+    {
+      "submission_page": 5,
+      "full_layout_page": 5,
+      "display_rows": 55,
+      "first_display_row": 221,
+      "last_display_row": 275
+    },
+    {
+      "submission_page": 6,
+      "full_layout_page": 6,
+      "display_rows": 55,
+      "first_display_row": 276,
+      "last_display_row": 330
+    },
+    {
+      "submission_page": 7,
+      "full_layout_page": 7,
+      "display_rows": 55,
+      "first_display_row": 331,
+      "last_display_row": 385
+    },
+    {
+      "submission_page": 8,
+      "full_layout_page": 8,
+      "display_rows": 55,
+      "first_display_row": 386,
+      "last_display_row": 440
+    },
+    {
+      "submission_page": 9,
+      "full_layout_page": 9,
+      "display_rows": 55,
+      "first_display_row": 441,
+      "last_display_row": 495
+    },
+    {
+      "submission_page": 10,
+      "full_layout_page": 10,
+      "display_rows": 55,
+      "first_display_row": 496,
+      "last_display_row": 550
+    },
+    {
+      "submission_page": 11,
+      "full_layout_page": 11,
+      "display_rows": 55,
+      "first_display_row": 551,
+      "last_display_row": 605
+    },
+    {
+      "submission_page": 12,
+      "full_layout_page": 12,
+      "display_rows": 55,
+      "first_display_row": 606,
+      "last_display_row": 660
+    },
+    {
+      "submission_page": 13,
+      "full_layout_page": 13,
+      "display_rows": 55,
+      "first_display_row": 661,
+      "last_display_row": 715
+    },
+    {
+      "submission_page": 14,
+      "full_layout_page": 14,
+      "display_rows": 55,
+      "first_display_row": 716,
+      "last_display_row": 770
+    },
+    {
+      "submission_page": 15,
+      "full_layout_page": 15,
+      "display_rows": 55,
+      "first_display_row": 771,
+      "last_display_row": 825
+    },
+    {
+      "submission_page": 16,
+      "full_layout_page": 16,
+      "display_rows": 55,
+      "first_display_row": 826,
+      "last_display_row": 880
+    },
+    {
+      "submission_page": 17,
+      "full_layout_page": 17,
+      "display_rows": 55,
+      "first_display_row": 881,
+      "last_display_row": 935
+    },
+    {
+      "submission_page": 18,
+      "full_layout_page": 18,
+      "display_rows": 55,
+      "first_display_row": 936,
+      "last_display_row": 990
+    },
+    {
+      "submission_page": 19,
+      "full_layout_page": 19,
+      "display_rows": 55,
+      "first_display_row": 991,
+      "last_display_row": 1045
+    },
+    {
+      "submission_page": 20,
+      "full_layout_page": 20,
+      "display_rows": 55,
+      "first_display_row": 1046,
+      "last_display_row": 1100
+    },
+    {
+      "submission_page": 21,
+      "full_layout_page": 21,
+      "display_rows": 55,
+      "first_display_row": 1101,
+      "last_display_row": 1155
+    },
+    {
+      "submission_page": 22,
+      "full_layout_page": 22,
+      "display_rows": 55,
+      "first_display_row": 1156,
+      "last_display_row": 1210
+    },
+    {
+      "submission_page": 23,
+      "full_layout_page": 23,
+      "display_rows": 55,
+      "first_display_row": 1211,
+      "last_display_row": 1265
+    },
+    {
+      "submission_page": 24,
+      "full_layout_page": 24,
+      "display_rows": 55,
+      "first_display_row": 1266,
+      "last_display_row": 1320
+    },
+    {
+      "submission_page": 25,
+      "full_layout_page": 25,
+      "display_rows": 55,
+      "first_display_row": 1321,
+      "last_display_row": 1375
+    },
+    {
+      "submission_page": 26,
+      "full_layout_page": 26,
+      "display_rows": 55,
+      "first_display_row": 1376,
+      "last_display_row": 1430
+    },
+    {
+      "submission_page": 27,
+      "full_layout_page": 27,
+      "display_rows": 55,
+      "first_display_row": 1431,
+      "last_display_row": 1485
+    },
+    {
+      "submission_page": 28,
+      "full_layout_page": 28,
+      "display_rows": 55,
+      "first_display_row": 1486,
+      "last_display_row": 1540
+    },
+    {
+      "submission_page": 29,
+      "full_layout_page": 29,
+      "display_rows": 55,
+      "first_display_row": 1541,
+      "last_display_row": 1595
+    },
+    {
+      "submission_page": 30,
+      "full_layout_page": 30,
+      "display_rows": 55,
+      "first_display_row": 1596,
+      "last_display_row": 1650
+    },
+    {
+      "submission_page": 31,
+      "full_layout_page": 53,
+      "display_rows": 55,
+      "first_display_row": 2861,
+      "last_display_row": 2915
+    },
+    {
+      "submission_page": 32,
+      "full_layout_page": 54,
+      "display_rows": 55,
+      "first_display_row": 2916,
+      "last_display_row": 2970
+    },
+    {
+      "submission_page": 33,
+      "full_layout_page": 55,
+      "display_rows": 55,
+      "first_display_row": 2971,
+      "last_display_row": 3025
+    },
+    {
+      "submission_page": 34,
+      "full_layout_page": 56,
+      "display_rows": 55,
+      "first_display_row": 3026,
+      "last_display_row": 3080
+    },
+    {
+      "submission_page": 35,
+      "full_layout_page": 57,
+      "display_rows": 55,
+      "first_display_row": 3081,
+      "last_display_row": 3135
+    },
+    {
+      "submission_page": 36,
+      "full_layout_page": 58,
+      "display_rows": 55,
+      "first_display_row": 3136,
+      "last_display_row": 3190
+    },
+    {
+      "submission_page": 37,
+      "full_layout_page": 59,
+      "display_rows": 55,
+      "first_display_row": 3191,
+      "last_display_row": 3245
+    },
+    {
+      "submission_page": 38,
+      "full_layout_page": 60,
+      "display_rows": 55,
+      "first_display_row": 3246,
+      "last_display_row": 3300
+    },
+    {
+      "submission_page": 39,
+      "full_layout_page": 61,
+      "display_rows": 55,
+      "first_display_row": 3301,
+      "last_display_row": 3355
+    },
+    {
+      "submission_page": 40,
+      "full_layout_page": 62,
+      "display_rows": 55,
+      "first_display_row": 3356,
+      "last_display_row": 3410
+    },
+    {
+      "submission_page": 41,
+      "full_layout_page": 63,
+      "display_rows": 55,
+      "first_display_row": 3411,
+      "last_display_row": 3465
+    },
+    {
+      "submission_page": 42,
+      "full_layout_page": 64,
+      "display_rows": 55,
+      "first_display_row": 3466,
+      "last_display_row": 3520
+    },
+    {
+      "submission_page": 43,
+      "full_layout_page": 65,
+      "display_rows": 55,
+      "first_display_row": 3521,
+      "last_display_row": 3575
+    },
+    {
+      "submission_page": 44,
+      "full_layout_page": 66,
+      "display_rows": 55,
+      "first_display_row": 3576,
+      "last_display_row": 3630
+    },
+    {
+      "submission_page": 45,
+      "full_layout_page": 67,
+      "display_rows": 55,
+      "first_display_row": 3631,
+      "last_display_row": 3685
+    },
+    {
+      "submission_page": 46,
+      "full_layout_page": 68,
+      "display_rows": 55,
+      "first_display_row": 3686,
+      "last_display_row": 3740
+    },
+    {
+      "submission_page": 47,
+      "full_layout_page": 69,
+      "display_rows": 55,
+      "first_display_row": 3741,
+      "last_display_row": 3795
+    },
+    {
+      "submission_page": 48,
+      "full_layout_page": 70,
+      "display_rows": 55,
+      "first_display_row": 3796,
+      "last_display_row": 3850
+    },
+    {
+      "submission_page": 49,
+      "full_layout_page": 71,
+      "display_rows": 55,
+      "first_display_row": 3851,
+      "last_display_row": 3905
+    },
+    {
+      "submission_page": 50,
+      "full_layout_page": 72,
+      "display_rows": 55,
+      "first_display_row": 3906,
+      "last_display_row": 3960
+    },
+    {
+      "submission_page": 51,
+      "full_layout_page": 73,
+      "display_rows": 55,
+      "first_display_row": 3961,
+      "last_display_row": 4015
+    },
+    {
+      "submission_page": 52,
+      "full_layout_page": 74,
+      "display_rows": 55,
+      "first_display_row": 4016,
+      "last_display_row": 4070
+    },
+    {
+      "submission_page": 53,
+      "full_layout_page": 75,
+      "display_rows": 55,
+      "first_display_row": 4071,
+      "last_display_row": 4125
+    },
+    {
+      "submission_page": 54,
+      "full_layout_page": 76,
+      "display_rows": 55,
+      "first_display_row": 4126,
+      "last_display_row": 4180
+    },
+    {
+      "submission_page": 55,
+      "full_layout_page": 77,
+      "display_rows": 55,
+      "first_display_row": 4181,
+      "last_display_row": 4235
+    },
+    {
+      "submission_page": 56,
+      "full_layout_page": 78,
+      "display_rows": 55,
+      "first_display_row": 4236,
+      "last_display_row": 4290
+    },
+    {
+      "submission_page": 57,
+      "full_layout_page": 79,
+      "display_rows": 55,
+      "first_display_row": 4291,
+      "last_display_row": 4345
+    },
+    {
+      "submission_page": 58,
+      "full_layout_page": 80,
+      "display_rows": 55,
+      "first_display_row": 4346,
+      "last_display_row": 4400
+    },
+    {
+      "submission_page": 59,
+      "full_layout_page": 81,
+      "display_rows": 55,
+      "first_display_row": 4401,
+      "last_display_row": 4455
+    },
+    {
+      "submission_page": 60,
+      "full_layout_page": 82,
+      "display_rows": 35,
+      "first_display_row": 4456,
+      "last_display_row": 4490
+    }
+  ],
+  "checks": {
+    "word_pdf_pairs": 6,
+    "images_exist": true,
+    "pdf_replacement_characters": 0,
+    "source_page_and_line_numbers_match": true
+  }
+}

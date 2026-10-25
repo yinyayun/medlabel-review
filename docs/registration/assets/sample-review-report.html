@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>说明书变更审核报告 #1</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6f9;color:#1c3042;font:14px/1.7 system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+main{max-width:1150px;margin:32px auto;background:white;padding:40px;border-radius:16px}h1{margin:0 0 10px;font-size:28px;line-height:1.4}h2{margin:28px 0 14px;font-size:20px}h3,h4{margin:0 0 8px}
+.eyebrow{color:#087f85;font-size:12px;letter-spacing:2px}.muted,.location{color:#5e6f7c}.location{font-size:12px;margin-top:0}
+.stats,.columns,.versions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin:25px 0}
+.stat,.version{padding:18px;border:1px solid #dce5ec;border-radius:10px}.stat strong{display:block;font-size:26px;color:#087f85}dl{display:grid;grid-template-columns:76px minmax(0,1fr);gap:6px 10px;margin:0}dt{color:#5e6f7c}dd{margin:0;overflow-wrap:anywhere}
+.change{border:1px solid #dce5ec;border-radius:10px;margin:18px 0;padding:22px}.change-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.change-title h3{margin-right:auto}.badge,.flag{display:inline-block;border-radius:4px;padding:2px 7px;font-size:12px;background:#eaf2f7}.flag{background:#fff0d4;color:#78510a;margin:0 5px 8px 0}.flags{margin-top:8px}
+pre{font:inherit;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:14px;border-radius:6px;margin:0}.review{margin-top:16px;border-top:1px solid #dce5ec;padding-top:14px}.review p{margin:5px 0}.note{white-space:pre-wrap;overflow-wrap:anywhere}details{margin-top:14px}summary{cursor:pointer;color:#087f85}del{background:#fee4e4;text-decoration:line-through}ins{background:#d9f3e4;text-decoration:underline}.warning{background:#fff7e9;padding:14px;border-radius:8px}.empty{padding:28px;border:1px dashed #a8c4d2;border-radius:8px}footer{margin-top:30px;border-top:1px solid #dce5ec;padding-top:15px;color:#5e6f7c;font-size:12px}.print-tip{font-size:12px;color:#5e6f7c}
+@media(max-width:700px){main{padding:20px;margin:0;border-radius:0}.columns,.versions{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+@media print{@page{size:A4;margin:15mm}body{background:white;font-size:10pt}main{padding:0;margin:0;max-width:none}.print-tip{display:none}.change{break-inside:auto;border-radius:0}.change-title,.review{break-inside:avoid}pre{font-size:9pt}a{color:inherit}details{display:none}}
+</style></head><body><main>
+<div class="eyebrow">MEDLABEL REVIEW · V1.0</div>
+<h1>药品说明书版本比对与变更审核报告</h1>
+<p><strong>示例药品 A（模拟）</strong> · 比对任务 #1</p>
+<p class="muted">任务创建：2026-10-25T23:35:43.443338+00:00　｜　导出时间：2026-10-25T23:35:58+00:00（UTC）</p>
+<p class="print-tip">可使用浏览器“打印 / 另存为 PDF”保存此报告。</p>
+<div class="stats"><div class="stat"><strong>6</strong>变更章节</div><div class="stat"><strong>5</strong>待复核</div><div class="stat"><strong>1</strong>已确认</div><div class="stat"><strong>0</strong>已忽略</div></div>
+<p class="muted">未变更章节：6。本报告反映导出时点的审核状态。</p>
+<h2>资料来源与版本追溯</h2><div class="versions"><section class="version"><h3>旧版</h3><dl><dt>版本名称</dt><dd>模拟初始版</dd><dt>版本日期</dt><dd>2026-01-01</dd><dt>资料来源</dt><dd>项目内置虚构示例，不用于临床</dd><dt>原始文件</dt><dd>demo-v1.txt</dd><dt>导入时间</dt><dd>2026-10-25T23:35:43.440641+00:00</dd><dt>SHA-256</dt><dd>7e5fe79e7597c51e133dd6fab2d5e1f48e74686105287d0c8258f145af69153d</dd></dl></section><section class="version"><h3>新版</h3><dl><dt>版本名称</dt><dd>模拟修订版</dd><dt>版本日期</dt><dd>2026-06-01</dd><dt>资料来源</dt><dd>项目内置虚构示例，不用于临床</dd><dt>原始文件</dt><dd>demo-v2.txt</dd><dt>导入时间</dt><dd>2026-10-25T23:35:43.440937+00:00</dd><dt>SHA-256</dt><dd>abca597da36899537fc60c13e7357334088c606fb7a238a4c27f5cbd3ae30b71</dd></dl></section></div>
+<h2>章节差异与审核意见</h2>
+    <article class="change">
+      <header class="change-title"><h3>01 · 用法用量</h3>
+      <span class="badge">内容修改</span>
+      <span class="badge">重点关注</span>
+      <span class="badge">已确认</span></header>
+      <div class="flags"><span class="flag">重点章节变更，需人工复核</span><span class="flag">数字或比例变化</span></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">提取文本第 10–11 行</p>
+          <pre>测试字段：数值 10 mg。此字段为虚构测试数据，禁止据此用药。</pre></section>
+        <section><h4>新版原文</h4><p class="location">提取文本第 10–11 行</p>
+          <pre>测试字段：数值 15 mg。此字段为虚构测试数据，禁止据此用药。</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff">测试字段：数值 1<del>0</del><ins>5</ins> mg。此字段为虚构测试数据，禁止据此用药。</pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：已确认　·　操作员：本地审核员　·　记录修订号：1</p>
+        <p>复核时间：2026-10-25T23:35:54.398985+00:00</p>
+        <p class="note">已对照模拟原文，确认数值字段由 10 mg 变为 15 mg；仅为演示数据。</p>
+      </section>
+    </article>
+    <article class="change">
+      <header class="change-title"><h3>02 · 禁忌</h3>
+      <span class="badge">内容修改</span>
+      <span class="badge">重点关注</span>
+      <span class="badge">待复核</span></header>
+      <div class="flags"><span class="flag">重点章节变更，需人工复核</span></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">提取文本第 12–13 行</p>
+          <pre>演示规则甲：禁止用于临床。</pre></section>
+        <section><h4>新版原文</h4><p class="location">提取文本第 12–13 行</p>
+          <pre>演示规则甲：禁止用于临床。新增演示规则乙：不得替代药师审核。</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff">演示规则甲：禁止用于临床。<ins>新增演示规则乙：不得替代药师审核。</ins></pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：待复核　·　操作员：—　·　记录修订号：0</p>
+        <p>复核时间：尚未复核</p>
+        <p class="note">未填写审核意见</p>
+      </section>
+    </article>
+    <article class="change">
+      <header class="change-title"><h3>03 · 不良反应</h3>
+      <span class="badge">内容修改</span>
+      <span class="badge">重点关注</span>
+      <span class="badge">待复核</span></header>
+      <div class="flags"><span class="flag">重点章节变更，需人工复核</span></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">提取文本第 14–15 行</p>
+          <pre>无真实临床数据；待补充演示字段。</pre></section>
+        <section><h4>新版原文</h4><p class="location">提取文本第 14–15 行</p>
+          <pre>无真实临床数据；新增虚构字段用于演示变化定位。</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff">无真实临床数据；<del>待补充</del><ins>新增虚构字段用于</ins>演示<del>字段</del><ins>变化定位</ins>。</pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：待复核　·　操作员：—　·　记录修订号：0</p>
+        <p>复核时间：尚未复核</p>
+        <p class="note">未填写审核意见</p>
+      </section>
+    </article>
+    <article class="change">
+      <header class="change-title"><h3>04 · 注意事项</h3>
+      <span class="badge">新增章节</span>
+      <span class="badge">重点关注</span>
+      <span class="badge">待复核</span></header>
+      <div class="flags"><span class="flag">重点章节变更，需人工复核</span></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">无对应章节</p>
+          <pre>（无）</pre></section>
+        <section><h4>新版原文</h4><p class="location">提取文本第 16–17 行</p>
+          <pre>请由人工审核软件识别出的差异；本材料为模拟示例，不用于临床。</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff"><ins>请由人工审核软件识别出的差异；本材料为模拟示例，不用于临床。</ins></pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：待复核　·　操作员：—　·　记录修订号：0</p>
+        <p>复核时间：尚未复核</p>
+        <p class="note">未填写审核意见</p>
+      </section>
+    </article>
+    <article class="change">
+      <header class="change-title"><h3>05 · 说明书修订日期</h3>
+      <span class="badge">内容修改</span>
+      <span class="badge">重点关注</span>
+      <span class="badge">待复核</span></header>
+      <div class="flags"><span class="flag">数字或比例变化</span></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">提取文本第 20–22 行</p>
+          <pre>2026-01-01</pre></section>
+        <section><h4>新版原文</h4><p class="location">提取文本第 20–22 行</p>
+          <pre>2026-06-01</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff">2026-0<del>1</del><ins>6</ins>-01</pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：待复核　·　操作员：—　·　记录修订号：0</p>
+        <p>复核时间：尚未复核</p>
+        <p class="note">未填写审核意见</p>
+      </section>
+    </article>
+    <article class="change">
+      <header class="change-title"><h3>06 · 包装</h3>
+      <span class="badge">删除章节</span>
+      <span class="badge">常规</span>
+      <span class="badge">待复核</span></header>
+      <div class="flags"></div>
+      <div class="columns">
+        <section><h4>旧版原文</h4><p class="location">提取文本第 18–19 行</p>
+          <pre>模拟包装 A。</pre></section>
+        <section><h4>新版原文</h4><p class="location">无对应章节</p>
+          <pre>（无）</pre></section>
+      </div>
+      <details><summary>逐字差异（删除线为旧内容，下划线为新内容）</summary><pre class="inline-diff"><del>模拟包装 A。</del></pre></details>
+      <section class="review"><h4>人工审核记录</h4>
+        <p>状态：待复核　·　操作员：—　·　记录修订号：0</p>
+        <p>复核时间：尚未复核</p>
+        <p class="note">未填写审核意见</p>
+      </section>
+    </article>
+<footer>药品说明书版本比对与变更审核系统 V1.0。此工具用于文本比对与记录整理，不判断临床正确性或替代专业审核。操作员名称是本地配置的记录标签，未经身份认证；本报告不构成电子签名。行号指向提取文本，手工校正章节的位置应结合原始文件复核。文件 SHA-256 用于核对原始文件内容。</footer>
+</main></body></html>
