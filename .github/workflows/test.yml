@@ -1,0 +1,32 @@
+name: Test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest
+      - run: node --check app/static/app.js
+      - name: Install browser
+        if: matrix.python == '3.12'
+        run: python -m playwright install --with-deps chromium
+      - name: Browser workflow
+        if: matrix.python == '3.12'
+        run: python scripts/browser_smoke.py --screenshots test-results
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.python == '3.12'
+        with:
+          name: browser-verification
+          path: test-results/

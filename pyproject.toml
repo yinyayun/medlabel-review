@@ -1,0 +1,10 @@
+[project]
+name = "medlabel-review"
+version = "1.0.0"
+description = "药品说明书版本比对与变更审核系统"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"

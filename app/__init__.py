@@ -1,0 +1,1 @@
+"""MedLabel Review application."""

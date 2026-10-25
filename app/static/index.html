@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#123d3b" />
+    <title>MedLabel Review · 药品说明书审核</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='13' fill='%23174441'/%3E%3Cpath d='M15 12h18v24H15z' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='m19 25 4 4 7-9M20 17h8' fill='none' stroke='%239ce1c7' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳至主要内容</a>
+    <aside class="sidebar" aria-label="主导航">
+      <a class="brand" href="#dashboard" aria-label="MedLabel Review 工作台">
+        <span class="brand-mark" aria-hidden="true"
+          ><svg viewBox="0 0 32 32">
+            <path d="M8 5h12l4 4v18H8zM20 5v5h4M12 13h8m-8 5 3 3 6-6" /></svg
+        ></span>
+        <span>MedLabel<span class="brand-sub">REVIEW WORKSPACE</span></span>
+      </a>
+      <div class="nav-label">说明书管理</div>
+      <nav id="navigation">
+        <a href="#dashboard" data-nav="dashboard"
+          ><span class="nav-icon" data-icon="grid"></span>工作台</a
+        >
+        <a href="#drugs" data-nav="drugs"
+          ><span class="nav-icon" data-icon="archive"></span>药品与版本</a
+        >
+        <a href="#comparisons" data-nav="comparisons"
+          ><span class="nav-icon" data-icon="compare"></span>比对与审核<span
+            id="nav-pending"
+            class="nav-count"
+            hidden
+          ></span
+        ></a>
+        <a href="#audit" data-nav="audit"
+          ><span class="nav-icon" data-icon="clock"></span>操作记录</a
+        >
+      </nav>
+      <div class="sidebar-tip">
+        <span class="eyebrow">让每一次变更都有依据</span>
+        <p>从原文定位到人工复核，<br />保留完整的审核过程。</p>
+        <button type="button" class="demo-button" data-action="demo">
+          体验模拟示例 <span aria-hidden="true">↗</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <span class="status-dot"></span> 本地工作空间<span class="version-label"
+          >V1.0</span
+        >
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumb">
+          药品说明书 <span>/</span> <span id="breadcrumb-current">工作台</span>
+        </div>
+        <div class="operator">
+          <span class="operator-avatar" aria-hidden="true">审</span
+          ><span
+            >本地单人审核<span class="operator-caption"
+              >资料保存在本机</span
+            ></span
+          >
+        </div>
+      </header>
+      <main id="main" tabindex="-1" aria-live="polite">
+        <div class="loading-state">
+          <span class="spinner"></span>正在加载工作空间…
+        </div>
+      </main>
+      <footer class="page-footer">
+        <span>药品说明书版本比对与变更审核系统</span
+        ><span>辅助资料核查 · 变更需人工复核</span>
+      </footer>
+    </div>
+    <dialog id="modal" aria-labelledby="modal-title">
+      <div class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <span id="modal-eyebrow" class="eyebrow">MEDLABEL REVIEW</span>
+            <h2 id="modal-title"></h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="modal-close"
+            aria-label="关闭对话框"
+          >
+            ×
+          </button>
+        </header>
+        <div id="modal-content"></div>
+      </div>
+    </dialog>
+    <div
+      id="toasts"
+      class="toasts"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <noscript
+      ><div class="noscript">
+        本应用需要启用 JavaScript 才能管理药品说明书。
+      </div></noscript
+    >
+  </body>
+</html>
