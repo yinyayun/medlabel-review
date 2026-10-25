@@ -75,10 +75,24 @@ def run(screenshots: Path):
                 page.locator('#drug-form button[type="submit"]').click()
                 expect(page.locator('[data-action="import-version"]').first).to_be_visible()
                 for index, suffix in [(1, "txt"), (2, "docx")]:
-                    page.locator('[data-action="import-version"]').first.click()
+                    if index == 1:
+                        # Moving focus immediately after opening must survive
+                        # any delayed initialization; otherwise rapid typing
+                        # can silently land in the wrong input field.
+                        focused = page.evaluate("""async () => {
+                            document.querySelector('[data-action="import-version"]').click();
+                            document.querySelector('#version-source').focus();
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            return document.activeElement.id;
+                        }""")
+                        assert focused == "version-source", "Dialog stole focus after the user moved to another field"
+                    else:
+                        page.locator('[data-action="import-version"]').first.click()
                     page.locator("#version-label").fill(f"浏览器模拟版 {index}")
                     page.locator("#version-date").fill(f"2026-0{index}-01")
                     page.locator("#version-source").fill("项目内置模拟文件")
+                    expect(page.locator("#version-label")).to_have_value(f"浏览器模拟版 {index}")
+                    expect(page.locator("#version-source")).to_have_value("项目内置模拟文件")
                     page.locator("#version-file").set_input_files(str(ROOT / f"examples/demo-v{index}.{suffix}"))
                     page.locator('#import-form button[type="submit"]').click()
                     expect(page.locator("#sections-form")).to_be_visible()

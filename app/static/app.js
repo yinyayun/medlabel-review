@@ -162,10 +162,10 @@ function showModal(title, content, wide = false) {
   $("#modal-content").innerHTML = content;
   modal.classList.toggle("wide", wide);
   if (!modal.open) modal.showModal();
-  setTimeout(() => {
-    const input = $('input:not([type="hidden"]), textarea, select', modal);
-    (input || $("#modal-close")).focus();
-  }, 20);
+  // Set initial focus synchronously; a delayed callback can steal focus after
+  // the user has already moved to another field and misdirect their input.
+  const input = $('input:not([type="hidden"]), textarea, select', modal);
+  (input || $("#modal-close")).focus();
 }
 function closeModal() {
   modal.close();
