@@ -2,7 +2,7 @@
   "software": "药品说明书版本比对与变更审核系统",
   "version": "V1.0",
   "baseline_commit": "98e406f93f8777fc416014cee05d1737966fab4e",
-  "verified_at_utc": "2026-10-26T06:50:56+00:00",
+  "verified_at_utc": "2026-10-26T15:22:50+00:00",
   "source_manifest_sha256": "84b86c0707a3d80c853c75a02a8e570e9bcec70bf021cc914926c7ac52c204ee",
   "documents": [
     {
@@ -33,28 +33,28 @@
     },
     {
       "document": "03_登记申请信息草稿",
-      "pages": 4,
-      "characters": 3641,
+      "pages": 5,
+      "characters": 5117,
       "word": {
         "path": "word/03_登记申请信息草稿.docx",
-        "sha256": "78e0bace316d7a4e8642cebc880479f77a1fe4e27f7037e9bca6f82571a1d502"
+        "sha256": "e145abf07275dee51241c7284ca98292577e8a026bf57aab252826c00d926122"
       },
       "pdf": {
         "path": "pdf/03_登记申请信息草稿.pdf",
-        "sha256": "8f2a64856c2ed79ba5dd267189303f5a450a94c5421f81a172d13958384bfc89"
+        "sha256": "5c0035e68b0a1e122d4256115d508aea0e1ed0005d9fb70faad777c39db7e35f"
       }
     },
     {
       "document": "04_提交材料核对单",
-      "pages": 3,
-      "characters": 3128,
+      "pages": 4,
+      "characters": 3479,
       "word": {
         "path": "word/04_提交材料核对单.docx",
-        "sha256": "8fdb1121ccb6e13a3fc06e02ad1507046fd8ae7183636abf94e9c3917f5402fd"
+        "sha256": "6fdfefc37b9dc3cd260c5c5f3602b0d37e2c7cf1b07a7487595f568a574b63ac"
       },
       "pdf": {
         "path": "pdf/04_提交材料核对单.pdf",
-        "sha256": "15949a39cd88442e721db157611fe03dfe80ba7b2a568268d1805d1a21e0cb81"
+        "sha256": "996bd80046139eab14e0dd5f022c840c434208068c749df8b3287bdf2d41d40a"
       }
     },
     {
@@ -85,15 +85,15 @@
     },
     {
       "document": "07_内容审查与提交待办",
-      "pages": 3,
-      "characters": 3278,
+      "pages": 4,
+      "characters": 4059,
       "word": {
         "path": "word/07_内容审查与提交待办.docx",
-        "sha256": "d5e072f5ce2d5f7e095aef54cb9397cda24be3e57401e6f62435d644e3256fe1"
+        "sha256": "3a0cd94aad377238db64a61178f4ae25fa78dce2f730d3365e090062ba733fa0"
       },
       "pdf": {
         "path": "pdf/07_内容审查与提交待办.pdf",
-        "sha256": "d5b1f7cdbc245ba94848ea53567a2a9761062627fb470de6cd309233012385bf"
+        "sha256": "d5118bea81db09194fb6dd0be5166bb7d5e3a5f611001266e84f43dcabead39d"
       }
     }
   ],
