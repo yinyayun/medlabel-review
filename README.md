@@ -88,6 +88,7 @@ scripts/           启动及浏览器验收脚本
 
 ## 项目与软著材料
 
+- **[个人申请材料：完整 ZIP、待填信息及使用步骤](docs/registration/application/README.md)**
 - [软著文档包：Word、PDF、真实截图和源程序鉴别材料](docs/registration/README.md)
 - [用户操作手册](docs/用户操作手册.md)
 - [软件设计说明书](docs/软件设计说明书.md)
