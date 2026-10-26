@@ -95,9 +95,10 @@
   "total_physical_lines_including_blank": 4505,
   "total_nonempty_source_lines": 4079,
   "total_display_rows": 4490,
-  "full_layout_pages": 82,
+  "full_layout_pages": 75,
   "submitted_pages": 60,
-  "page_policy": "每页55个显示行；保留实际代码，省略纯空白行并对长行折行。全量编排超过60页时取前30页、后30页。末页按实际内容保留。",
+  "display_rows_per_full_page": 60,
+  "page_policy": "每页60个显示行，末页50行；保留实际代码，省略纯空白行并对长行折行。全量75页，取前30页、后30页。显示行与原始源行分别标识，折行不计为新增源程序量。",
   "pages": [
     {
       "submission_page": 1,
@@ -110,190 +111,183 @@
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 49,
+        "source_line": 58,
         "continuation": 0,
-        "display_row": 55
+        "display_row": 60
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 2,
       "full_layout_page": 2,
       "first": {
         "path": "app/main.py",
-        "source_line": 52,
+        "source_line": 61,
         "continuation": 0,
-        "display_row": 56
+        "display_row": 61
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 114,
+        "source_line": 123,
         "continuation": 0,
-        "display_row": 110
+        "display_row": 120
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 53
     },
     {
       "submission_page": 3,
       "full_layout_page": 3,
       "first": {
         "path": "app/main.py",
-        "source_line": 115,
-        "continuation": 0,
-        "display_row": 111
+        "source_line": 123,
+        "continuation": 1,
+        "display_row": 121
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 165,
-        "continuation": 1,
-        "display_row": 165
+        "source_line": 181,
+        "continuation": 0,
+        "display_row": 180
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 4,
       "full_layout_page": 4,
       "first": {
         "path": "app/main.py",
-        "source_line": 166,
+        "source_line": 182,
         "continuation": 0,
-        "display_row": 166
+        "display_row": 181
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 216,
+        "source_line": 232,
         "continuation": 0,
-        "display_row": 220
+        "display_row": 240
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 48
     },
     {
       "submission_page": 5,
       "full_layout_page": 5,
       "first": {
         "path": "app/main.py",
-        "source_line": 217,
+        "source_line": 233,
         "continuation": 0,
-        "display_row": 221
+        "display_row": 241
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 260,
+        "source_line": 283,
         "continuation": 0,
-        "display_row": 275
+        "display_row": 300
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 46
     },
     {
       "submission_page": 6,
       "full_layout_page": 6,
       "first": {
         "path": "app/main.py",
-        "source_line": 260,
-        "continuation": 1,
-        "display_row": 276
+        "source_line": 284,
+        "continuation": 0,
+        "display_row": 301
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 311,
+        "source_line": 338,
         "continuation": 0,
-        "display_row": 330
+        "display_row": 360
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 7,
       "full_layout_page": 7,
       "first": {
         "path": "app/main.py",
-        "source_line": 311,
-        "continuation": 1,
-        "display_row": 331
+        "source_line": 339,
+        "continuation": 0,
+        "display_row": 361
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 359,
+        "source_line": 392,
         "continuation": 0,
-        "display_row": 385
+        "display_row": 420
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 8,
       "full_layout_page": 8,
       "first": {
         "path": "app/main.py",
-        "source_line": 360,
+        "source_line": 393,
         "continuation": 0,
-        "display_row": 386
+        "display_row": 421
       },
       "last": {
         "path": "app/main.py",
-        "source_line": 408,
-        "continuation": 1,
-        "display_row": 440
+        "source_line": 443,
+        "continuation": 0,
+        "display_row": 480
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 47
     },
     {
       "submission_page": 9,
       "full_layout_page": 9,
       "first": {
         "path": "app/main.py",
-        "source_line": 410,
+        "source_line": 444,
         "continuation": 0,
-        "display_row": 441
+        "display_row": 481
       },
       "last": {
         "path": "app/database.py",
-        "source_line": 14,
+        "source_line": 60,
         "continuation": 0,
-        "display_row": 495
+        "display_row": 540
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 56
     },
     {
       "submission_page": 10,
       "full_layout_page": 10,
       "first": {
         "path": "app/database.py",
-        "source_line": 17,
+        "source_line": 61,
         "continuation": 0,
-        "display_row": 496
+        "display_row": 541
       },
       "last": {
-        "path": "app/database.py",
-        "source_line": 71,
+        "path": "app/documents.py",
+        "source_line": 38,
         "continuation": 0,
-        "display_row": 550
+        "display_row": 600
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 11,
       "full_layout_page": 11,
       "first": {
-        "path": "app/database.py",
-        "source_line": 72,
-        "continuation": 0,
-        "display_row": 551
-      },
-      "last": {
         "path": "app/documents.py",
-        "source_line": 43,
+        "source_line": 39,
         "continuation": 0,
-        "display_row": 605
-      },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 12,
-      "full_layout_page": 12,
-      "first": {
-        "path": "app/documents.py",
-        "source_line": 44,
-        "continuation": 0,
-        "display_row": 606
+        "display_row": 601
       },
       "last": {
         "path": "app/documents.py",
@@ -301,11 +295,12 @@
         "continuation": 0,
         "display_row": 660
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 55
     },
     {
-      "submission_page": 13,
-      "full_layout_page": 13,
+      "submission_page": 12,
+      "full_layout_page": 12,
       "first": {
         "path": "app/documents.py",
         "source_line": 103,
@@ -314,190 +309,183 @@
       },
       "last": {
         "path": "app/documents.py",
-        "source_line": 160,
+        "source_line": 164,
         "continuation": 0,
-        "display_row": 715
+        "display_row": 720
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 55
+    },
+    {
+      "submission_page": 13,
+      "full_layout_page": 13,
+      "first": {
+        "path": "app/documents.py",
+        "source_line": 165,
+        "continuation": 0,
+        "display_row": 721
+      },
+      "last": {
+        "path": "app/documents.py",
+        "source_line": 225,
+        "continuation": 0,
+        "display_row": 780
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 14,
       "full_layout_page": 14,
       "first": {
         "path": "app/documents.py",
-        "source_line": 160,
-        "continuation": 1,
-        "display_row": 716
+        "source_line": 226,
+        "continuation": 0,
+        "display_row": 781
       },
       "last": {
         "path": "app/documents.py",
-        "source_line": 215,
+        "source_line": 289,
         "continuation": 0,
-        "display_row": 770
+        "display_row": 840
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 15,
       "full_layout_page": 15,
       "first": {
         "path": "app/documents.py",
-        "source_line": 216,
+        "source_line": 290,
         "continuation": 0,
-        "display_row": 771
+        "display_row": 841
       },
       "last": {
-        "path": "app/documents.py",
-        "source_line": 272,
+        "path": "app/comparison.py",
+        "source_line": 3,
         "continuation": 0,
-        "display_row": 825
+        "display_row": 900
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 16,
       "full_layout_page": 16,
       "first": {
-        "path": "app/documents.py",
-        "source_line": 273,
+        "path": "app/comparison.py",
+        "source_line": 4,
         "continuation": 0,
-        "display_row": 826
+        "display_row": 901
       },
       "last": {
-        "path": "app/documents.py",
-        "source_line": 334,
+        "path": "app/comparison.py",
+        "source_line": 74,
         "continuation": 0,
-        "display_row": 880
+        "display_row": 960
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 17,
       "full_layout_page": 17,
       "first": {
-        "path": "app/documents.py",
-        "source_line": 335,
+        "path": "app/comparison.py",
+        "source_line": 75,
         "continuation": 0,
-        "display_row": 881
+        "display_row": 961
       },
       "last": {
         "path": "app/comparison.py",
-        "source_line": 47,
+        "source_line": 131,
         "continuation": 0,
-        "display_row": 935
+        "display_row": 1020
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 54
     },
     {
       "submission_page": 18,
       "full_layout_page": 18,
       "first": {
         "path": "app/comparison.py",
-        "source_line": 50,
+        "source_line": 132,
         "continuation": 0,
-        "display_row": 936
+        "display_row": 1021
       },
       "last": {
-        "path": "app/comparison.py",
-        "source_line": 104,
+        "path": "app/static/styles.css",
+        "source_line": 61,
         "continuation": 0,
-        "display_row": 990
+        "display_row": 1080
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 19,
       "full_layout_page": 19,
       "first": {
-        "path": "app/comparison.py",
-        "source_line": 105,
+        "path": "app/static/styles.css",
+        "source_line": 62,
         "continuation": 0,
-        "display_row": 991
+        "display_row": 1081
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 20,
+        "source_line": 131,
         "continuation": 0,
-        "display_row": 1045
+        "display_row": 1140
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 20,
       "full_layout_page": 20,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 21,
+        "source_line": 132,
         "continuation": 0,
-        "display_row": 1046
+        "display_row": 1141
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 85,
+        "source_line": 200,
         "continuation": 0,
-        "display_row": 1100
+        "display_row": 1200
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 21,
       "full_layout_page": 21,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 86,
+        "source_line": 201,
         "continuation": 0,
-        "display_row": 1101
+        "display_row": 1201
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 149,
+        "source_line": 270,
         "continuation": 0,
-        "display_row": 1155
+        "display_row": 1260
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 22,
       "full_layout_page": 22,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 150,
+        "source_line": 271,
         "continuation": 0,
-        "display_row": 1156
-      },
-      "last": {
-        "path": "app/static/styles.css",
-        "source_line": 211,
-        "continuation": 0,
-        "display_row": 1210
-      },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 23,
-      "full_layout_page": 23,
-      "first": {
-        "path": "app/static/styles.css",
-        "source_line": 213,
-        "continuation": 0,
-        "display_row": 1211
-      },
-      "last": {
-        "path": "app/static/styles.css",
-        "source_line": 276,
-        "continuation": 0,
-        "display_row": 1265
-      },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 24,
-      "full_layout_page": 24,
-      "first": {
-        "path": "app/static/styles.css",
-        "source_line": 277,
-        "continuation": 0,
-        "display_row": 1266
+        "display_row": 1261
       },
       "last": {
         "path": "app/static/styles.css",
@@ -505,11 +493,12 @@
         "continuation": 0,
         "display_row": 1320
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
-      "submission_page": 25,
-      "full_layout_page": 25,
+      "submission_page": 23,
+      "full_layout_page": 23,
       "first": {
         "path": "app/static/styles.css",
         "source_line": 341,
@@ -518,224 +507,309 @@
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 403,
+        "source_line": 409,
         "continuation": 0,
-        "display_row": 1375
+        "display_row": 1380
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
+    },
+    {
+      "submission_page": 24,
+      "full_layout_page": 24,
+      "first": {
+        "path": "app/static/styles.css",
+        "source_line": 410,
+        "continuation": 0,
+        "display_row": 1381
+      },
+      "last": {
+        "path": "app/static/styles.css",
+        "source_line": 479,
+        "continuation": 0,
+        "display_row": 1440
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
+    },
+    {
+      "submission_page": 25,
+      "full_layout_page": 25,
+      "first": {
+        "path": "app/static/styles.css",
+        "source_line": 480,
+        "continuation": 0,
+        "display_row": 1441
+      },
+      "last": {
+        "path": "app/static/styles.css",
+        "source_line": 548,
+        "continuation": 0,
+        "display_row": 1500
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 26,
       "full_layout_page": 26,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 404,
+        "source_line": 549,
         "continuation": 0,
-        "display_row": 1376
+        "display_row": 1501
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 466,
+        "source_line": 619,
         "continuation": 0,
-        "display_row": 1430
+        "display_row": 1560
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 27,
       "full_layout_page": 27,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 467,
+        "source_line": 620,
         "continuation": 0,
-        "display_row": 1431
+        "display_row": 1561
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 531,
+        "source_line": 688,
         "continuation": 0,
-        "display_row": 1485
+        "display_row": 1620
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 28,
       "full_layout_page": 28,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 532,
+        "source_line": 689,
         "continuation": 0,
-        "display_row": 1486
+        "display_row": 1621
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 596,
+        "source_line": 758,
         "continuation": 0,
-        "display_row": 1540
+        "display_row": 1680
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 29,
       "full_layout_page": 29,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 597,
+        "source_line": 759,
         "continuation": 0,
-        "display_row": 1541
+        "display_row": 1681
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 659,
+        "source_line": 829,
         "continuation": 0,
-        "display_row": 1595
+        "display_row": 1740
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 30,
       "full_layout_page": 30,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 660,
+        "source_line": 830,
         "continuation": 0,
-        "display_row": 1596
+        "display_row": 1741
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 723,
+        "source_line": 901,
         "continuation": 0,
-        "display_row": 1650
+        "display_row": 1800
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 31,
-      "full_layout_page": 53,
+      "full_layout_page": 46,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 2098,
+        "source_line": 1938,
         "continuation": 0,
-        "display_row": 2861
+        "display_row": 2701
       },
       "last": {
         "path": "app/static/styles.css",
-        "source_line": 2153,
+        "source_line": 1997,
         "continuation": 0,
-        "display_row": 2915
+        "display_row": 2760
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 32,
-      "full_layout_page": 54,
+      "full_layout_page": 47,
       "first": {
         "path": "app/static/styles.css",
-        "source_line": 2154,
+        "source_line": 1998,
         "continuation": 0,
-        "display_row": 2916
+        "display_row": 2761
       },
       "last": {
-        "path": "app/static/index.html",
-        "source_line": 11,
+        "path": "app/static/styles.css",
+        "source_line": 2057,
         "continuation": 0,
-        "display_row": 2970
+        "display_row": 2820
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 33,
-      "full_layout_page": 55,
+      "full_layout_page": 48,
       "first": {
-        "path": "app/static/index.html",
-        "source_line": 11,
-        "continuation": 1,
-        "display_row": 2971
+        "path": "app/static/styles.css",
+        "source_line": 2058,
+        "continuation": 0,
+        "display_row": 2821
       },
       "last": {
-        "path": "app/static/index.html",
-        "source_line": 63,
+        "path": "app/static/styles.css",
+        "source_line": 2117,
         "continuation": 0,
-        "display_row": 3025
+        "display_row": 2880
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 34,
-      "full_layout_page": 56,
+      "full_layout_page": 49,
       "first": {
-        "path": "app/static/index.html",
-        "source_line": 64,
+        "path": "app/static/styles.css",
+        "source_line": 2118,
         "continuation": 0,
-        "display_row": 3026
+        "display_row": 2881
       },
       "last": {
-        "path": "app/static/app.js",
-        "source_line": 4,
+        "path": "app/static/styles.css",
+        "source_line": 2179,
         "continuation": 0,
-        "display_row": 3080
+        "display_row": 2940
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 35,
-      "full_layout_page": 57,
+      "full_layout_page": 50,
       "first": {
-        "path": "app/static/app.js",
-        "source_line": 5,
+        "path": "app/static/styles.css",
+        "source_line": 2180,
         "continuation": 0,
-        "display_row": 3081
+        "display_row": 2941
       },
       "last": {
-        "path": "app/static/app.js",
-        "source_line": 56,
+        "path": "app/static/index.html",
+        "source_line": 38,
         "continuation": 0,
-        "display_row": 3135
+        "display_row": 3000
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 36,
-      "full_layout_page": 58,
+      "full_layout_page": 51,
       "first": {
-        "path": "app/static/app.js",
-        "source_line": 57,
+        "path": "app/static/index.html",
+        "source_line": 39,
         "continuation": 0,
-        "display_row": 3136
+        "display_row": 3001
       },
       "last": {
-        "path": "app/static/app.js",
-        "source_line": 103,
+        "path": "app/static/index.html",
+        "source_line": 98,
         "continuation": 0,
-        "display_row": 3190
+        "display_row": 3060
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 37,
-      "full_layout_page": 59,
+      "full_layout_page": 52,
       "first": {
-        "path": "app/static/app.js",
-        "source_line": 104,
+        "path": "app/static/index.html",
+        "source_line": 99,
         "continuation": 0,
-        "display_row": 3191
+        "display_row": 3061
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 155,
+        "source_line": 42,
         "continuation": 0,
-        "display_row": 3245
+        "display_row": 3120
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 38,
-      "full_layout_page": 60,
+      "full_layout_page": 53,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 156,
+        "source_line": 42,
+        "continuation": 1,
+        "display_row": 3121
+      },
+      "last": {
+        "path": "app/static/app.js",
+        "source_line": 94,
         "continuation": 0,
-        "display_row": 3246
+        "display_row": 3180
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 53
+    },
+    {
+      "submission_page": 39,
+      "full_layout_page": 54,
+      "first": {
+        "path": "app/static/app.js",
+        "source_line": 95,
+        "continuation": 0,
+        "display_row": 3181
+      },
+      "last": {
+        "path": "app/static/app.js",
+        "source_line": 150,
+        "continuation": 0,
+        "display_row": 3240
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 56
+    },
+    {
+      "submission_page": 40,
+      "full_layout_page": 55,
+      "first": {
+        "path": "app/static/app.js",
+        "source_line": 151,
+        "continuation": 0,
+        "display_row": 3241
       },
       "last": {
         "path": "app/static/app.js",
@@ -743,11 +817,12 @@
         "continuation": 0,
         "display_row": 3300
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
-      "submission_page": 39,
-      "full_layout_page": 61,
+      "submission_page": 41,
+      "full_layout_page": 56,
       "first": {
         "path": "app/static/app.js",
         "source_line": 212,
@@ -756,190 +831,183 @@
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 267,
+        "source_line": 272,
         "continuation": 0,
-        "display_row": 3355
+        "display_row": 3360
       },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 40,
-      "full_layout_page": 62,
-      "first": {
-        "path": "app/static/app.js",
-        "source_line": 268,
-        "continuation": 0,
-        "display_row": 3356
-      },
-      "last": {
-        "path": "app/static/app.js",
-        "source_line": 317,
-        "continuation": 0,
-        "display_row": 3410
-      },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 41,
-      "full_layout_page": 63,
-      "first": {
-        "path": "app/static/app.js",
-        "source_line": 318,
-        "continuation": 0,
-        "display_row": 3411
-      },
-      "last": {
-        "path": "app/static/app.js",
-        "source_line": 351,
-        "continuation": 11,
-        "display_row": 3465
-      },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 42,
-      "full_layout_page": 64,
+      "full_layout_page": 57,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 351,
-        "continuation": 12,
-        "display_row": 3466
+        "source_line": 273,
+        "continuation": 0,
+        "display_row": 3361
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 391,
+        "source_line": 327,
         "continuation": 0,
-        "display_row": 3520
+        "display_row": 3420
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 43,
-      "full_layout_page": 65,
+      "full_layout_page": 58,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 392,
+        "source_line": 328,
         "continuation": 0,
-        "display_row": 3521
+        "display_row": 3421
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 419,
-        "continuation": 7,
-        "display_row": 3575
+        "source_line": 363,
+        "continuation": 0,
+        "display_row": 3480
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 36
     },
     {
       "submission_page": 44,
-      "full_layout_page": 66,
+      "full_layout_page": 59,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 420,
-        "continuation": 0,
-        "display_row": 3576
+        "source_line": 363,
+        "continuation": 1,
+        "display_row": 3481
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 458,
-        "continuation": 4,
-        "display_row": 3630
+        "source_line": 407,
+        "continuation": 3,
+        "display_row": 3540
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 45
     },
     {
       "submission_page": 45,
-      "full_layout_page": 67,
+      "full_layout_page": 60,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 458,
-        "continuation": 5,
-        "display_row": 3631
+        "source_line": 407,
+        "continuation": 4,
+        "display_row": 3541
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 494,
+        "source_line": 436,
         "continuation": 0,
-        "display_row": 3685
+        "display_row": 3600
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 30
     },
     {
       "submission_page": 46,
-      "full_layout_page": 68,
+      "full_layout_page": 61,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 495,
+        "source_line": 437,
         "continuation": 0,
-        "display_row": 3686
+        "display_row": 3601
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 523,
-        "continuation": 22,
-        "display_row": 3740
+        "source_line": 471,
+        "continuation": 0,
+        "display_row": 3660
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 35
     },
     {
       "submission_page": 47,
-      "full_layout_page": 69,
+      "full_layout_page": 62,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 523,
-        "continuation": 23,
-        "display_row": 3741
+        "source_line": 472,
+        "continuation": 0,
+        "display_row": 3661
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 553,
-        "continuation": 14,
-        "display_row": 3795
+        "source_line": 523,
+        "continuation": 2,
+        "display_row": 3720
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 52
     },
     {
       "submission_page": 48,
-      "full_layout_page": 70,
+      "full_layout_page": 63,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 554,
-        "continuation": 0,
-        "display_row": 3796
+        "source_line": 523,
+        "continuation": 3,
+        "display_row": 3721
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 582,
+        "source_line": 552,
         "continuation": 0,
-        "display_row": 3850
+        "display_row": 3780
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 29
     },
     {
       "submission_page": 49,
-      "full_layout_page": 71,
+      "full_layout_page": 64,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 582,
-        "continuation": 1,
-        "display_row": 3851
+        "source_line": 553,
+        "continuation": 0,
+        "display_row": 3781
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 600,
+        "source_line": 573,
         "continuation": 0,
-        "display_row": 3905
+        "display_row": 3840
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 21
     },
     {
       "submission_page": 50,
-      "full_layout_page": 72,
+      "full_layout_page": 65,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 601,
+        "source_line": 574,
         "continuation": 0,
-        "display_row": 3906
+        "display_row": 3841
+      },
+      "last": {
+        "path": "app/static/app.js",
+        "source_line": 594,
+        "continuation": 0,
+        "display_row": 3900
+      },
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 21
+    },
+    {
+      "submission_page": 51,
+      "full_layout_page": 66,
+      "first": {
+        "path": "app/static/app.js",
+        "source_line": 595,
+        "continuation": 0,
+        "display_row": 3901
       },
       "last": {
         "path": "app/static/app.js",
@@ -947,11 +1015,12 @@
         "continuation": 0,
         "display_row": 3960
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
-      "submission_page": 51,
-      "full_layout_page": 73,
+      "submission_page": 52,
+      "full_layout_page": 67,
       "first": {
         "path": "app/static/app.js",
         "source_line": 656,
@@ -960,156 +1029,147 @@
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 711,
+        "source_line": 716,
         "continuation": 0,
-        "display_row": 4015
+        "display_row": 4020
       },
-      "display_rows": 55
-    },
-    {
-      "submission_page": 52,
-      "full_layout_page": 74,
-      "first": {
-        "path": "app/static/app.js",
-        "source_line": 712,
-        "continuation": 0,
-        "display_row": 4016
-      },
-      "last": {
-        "path": "app/static/app.js",
-        "source_line": 767,
-        "continuation": 0,
-        "display_row": 4070
-      },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 53,
-      "full_layout_page": 75,
+      "full_layout_page": 68,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 768,
+        "source_line": 717,
         "continuation": 0,
-        "display_row": 4071
+        "display_row": 4021
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 822,
+        "source_line": 777,
         "continuation": 0,
-        "display_row": 4125
+        "display_row": 4080
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 54,
-      "full_layout_page": 76,
+      "full_layout_page": 69,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 823,
+        "source_line": 778,
         "continuation": 0,
-        "display_row": 4126
+        "display_row": 4081
       },
       "last": {
         "path": "app/static/app.js",
-        "source_line": 877,
+        "source_line": 837,
         "continuation": 0,
-        "display_row": 4180
+        "display_row": 4140
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 55,
-      "full_layout_page": 77,
+      "full_layout_page": 70,
       "first": {
         "path": "app/static/app.js",
-        "source_line": 878,
+        "source_line": 838,
         "continuation": 0,
-        "display_row": 4181
+        "display_row": 4141
       },
       "last": {
-        "path": "app/reports.py",
-        "source_line": 37,
+        "path": "app/static/app.js",
+        "source_line": 897,
         "continuation": 0,
-        "display_row": 4235
+        "display_row": 4200
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 56,
-      "full_layout_page": 78,
+      "full_layout_page": 71,
       "first": {
-        "path": "app/reports.py",
-        "source_line": 38,
+        "path": "app/static/app.js",
+        "source_line": 898,
         "continuation": 0,
-        "display_row": 4236
+        "display_row": 4201
       },
       "last": {
         "path": "app/reports.py",
-        "source_line": 91,
-        "continuation": 0,
-        "display_row": 4290
+        "source_line": 63,
+        "continuation": 1,
+        "display_row": 4260
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 57,
-      "full_layout_page": 79,
+      "full_layout_page": 72,
       "first": {
         "path": "app/reports.py",
-        "source_line": 92,
+        "source_line": 66,
         "continuation": 0,
-        "display_row": 4291
+        "display_row": 4261
       },
       "last": {
         "path": "app/reports.py",
-        "source_line": 127,
-        "continuation": 3,
-        "display_row": 4345
+        "source_line": 116,
+        "continuation": 1,
+        "display_row": 4320
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 58,
-      "full_layout_page": 80,
+      "full_layout_page": 73,
       "first": {
         "path": "app/reports.py",
-        "source_line": 127,
-        "continuation": 4,
-        "display_row": 4346
+        "source_line": 117,
+        "continuation": 0,
+        "display_row": 4321
       },
       "last": {
         "path": "app/reports.py",
-        "source_line": 157,
-        "continuation": 0,
-        "display_row": 4400
+        "source_line": 141,
+        "continuation": 1,
+        "display_row": 4380
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 25
     },
     {
       "submission_page": 59,
-      "full_layout_page": 81,
+      "full_layout_page": 74,
       "first": {
         "path": "app/reports.py",
-        "source_line": 157,
-        "continuation": 1,
-        "display_row": 4401
+        "source_line": 141,
+        "continuation": 2,
+        "display_row": 4381
       },
       "last": {
         "path": "app/demo.py",
-        "source_line": 18,
+        "source_line": 2,
         "continuation": 0,
-        "display_row": 4455
+        "display_row": 4440
       },
-      "display_rows": 55
+      "display_rows": 60,
+      "distinct_nonempty_source_lines": 45
     },
     {
       "submission_page": 60,
-      "full_layout_page": 82,
+      "full_layout_page": 75,
       "first": {
         "path": "app/demo.py",
-        "source_line": 19,
+        "source_line": 3,
         "continuation": 0,
-        "display_row": 4456
+        "display_row": 4441
       },
       "last": {
         "path": "app/demo.py",
@@ -1117,7 +1177,8 @@
         "continuation": 0,
         "display_row": 4490
       },
-      "display_rows": 35
+      "display_rows": 50,
+      "distinct_nonempty_source_lines": 50
     }
   ]
 }

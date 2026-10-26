@@ -2,85 +2,98 @@
   "software": "药品说明书版本比对与变更审核系统",
   "version": "V1.0",
   "baseline_commit": "98e406f93f8777fc416014cee05d1737966fab4e",
-  "verified_at_utc": "2026-10-25T23:40:52+00:00",
-  "source_manifest_sha256": "142f5cadd4e2e6a466ce4f79ef5353d5963fd3a3ae3faa29645d3dc16aa3aded",
+  "verified_at_utc": "2026-10-26T05:06:20+00:00",
+  "source_manifest_sha256": "84b86c0707a3d80c853c75a02a8e570e9bcec70bf021cc914926c7ac52c204ee",
   "documents": [
     {
       "document": "01_用户操作说明书",
-      "pages": 18,
-      "characters": 8423,
+      "pages": 16,
+      "characters": 8678,
       "word": {
         "path": "word/01_用户操作说明书.docx",
-        "sha256": "68c7de4e2afdb943dc0290e8fc06baa26f05d2aa241d902ada0613f499e7bbfd"
+        "sha256": "1bca871536fc070b3e1c0a017bc0331008d930a9761e765adcbdcd3d07bd36d4"
       },
       "pdf": {
         "path": "pdf/01_用户操作说明书.pdf",
-        "sha256": "976a5630bff4407cddd7e5b3b6d0b492cbe3a076fc2889a3b350570ec03451da"
+        "sha256": "052d916c99ef0ca9c00d9fcf5f90cea3097ee9280665f75ca770403e196d4f91"
       }
     },
     {
       "document": "02_软件设计说明书",
-      "pages": 10,
-      "characters": 8979,
+      "pages": 15,
+      "characters": 17031,
       "word": {
         "path": "word/02_软件设计说明书.docx",
-        "sha256": "40feb26f9aaadec408e6aad717976b4b9ec5ff136b253936a761543ba160c51e"
+        "sha256": "112f6c7f8ca07c322c965263c2d9bba931fe7d97af19ecb6b9a489fb074a5e0a"
       },
       "pdf": {
         "path": "pdf/02_软件设计说明书.pdf",
-        "sha256": "c48d5b7d5e5dd2c7252375e42c206a9eafdc5a82539b2dbde2d38a967360834e"
+        "sha256": "9f4216d7d4126620803440b1720203e2589866889b4b045ef38d8e6913447b45"
       }
     },
     {
       "document": "03_登记申请信息草稿",
       "pages": 4,
-      "characters": 3244,
+      "characters": 3447,
       "word": {
         "path": "word/03_登记申请信息草稿.docx",
-        "sha256": "72c47022db9e09b6e7badc9252c74c085d926986bca4bad06119cd6f3b7ff3ca"
+        "sha256": "07635c97462ca9d15bab66d0e79c6c3ca2820694381b782db69b8a79b370bbb7"
       },
       "pdf": {
         "path": "pdf/03_登记申请信息草稿.pdf",
-        "sha256": "506ad7219baa3780ce8c1841824dd9491750e725c6d92943fb1f6d21be385839"
+        "sha256": "2bc5f0dc6278f30fa8fd2075f4574788bd1d25048e5911da6320686a82ecbdb2"
       }
     },
     {
       "document": "04_提交材料核对单",
-      "pages": 4,
-      "characters": 2781,
+      "pages": 3,
+      "characters": 2927,
       "word": {
         "path": "word/04_提交材料核对单.docx",
-        "sha256": "683455659a660d29dd3616445b8c3a1e8f24415aa23001852bde0b12790e5349"
+        "sha256": "a6a868dafcf5d3f9d5cb5badce93b7809138f2396fd3c9d4090412ce2c608df1"
       },
       "pdf": {
         "path": "pdf/04_提交材料核对单.pdf",
-        "sha256": "7a82904608743e7b5d0a5dd0a49a3cb7d69471d111ae9a15996f8385b73bfa59"
+        "sha256": "22589b98b61a4b2f0ed832dc149b867fab164455930c8a10ea1dbb7a02edcf6f"
       }
     },
     {
       "document": "05_源程序鉴别材料",
       "pages": 60,
-      "characters": 148408,
+      "characters": 175309,
       "word": {
         "path": "word/05_源程序鉴别材料.docx",
-        "sha256": "3e6375a9192a4c3ce5201ee8cc8715670a2d2205444cd3c97de2b6c9353b893e"
+        "sha256": "61d5df67c19f84f24b9087bbf941b3b28dd94c02e50e8fff871a56926f75fe98"
       },
       "pdf": {
         "path": "pdf/05_源程序鉴别材料.pdf",
-        "sha256": "1818e25f22f57265a2efa54bfedb365cdc1092b03ac0b65b56ed0b0e967bff00"
+        "sha256": "1ac66e6c6b822e388745d20d19a0f217201a42633231f6adfba3ad7dddb2ad47"
       }
     },
     {
       "document": "06_源程序编排说明",
-      "pages": 3,
-      "characters": 1693,
+      "pages": 2,
+      "characters": 1715,
       "word": {
         "path": "word/06_源程序编排说明.docx",
-        "sha256": "2032429f4b221e6e5a7516131b58747a82531ee1aec4b904ce5baa4cdbc2a771"
+        "sha256": "de840bc40040b10ee7b524519984702f72ae2fac1ab87ac92a28dd7808d0f192"
       },
       "pdf": {
         "path": "pdf/06_源程序编排说明.pdf",
-        "sha256": "70d0d765f22fa91fb2c75f5018c8f437d514c64bb0d57810c0a5ac2e0e5dfff8"
+        "sha256": "11d55533c6ca4871ba16d513ee688abb1583950b813630a5dfe18d19c68f7c60"
+      }
+    },
+    {
+      "document": "07_内容审查与提交待办",
+      "pages": 3,
+      "characters": 3200,
+      "word": {
+        "path": "word/07_内容审查与提交待办.docx",
+        "sha256": "d129e188172c62f36ab33a61d985ce891f0e0d330e2a76f5ade488858b4f8c7a"
+      },
+      "pdf": {
+        "path": "pdf/07_内容审查与提交待办.pdf",
+        "sha256": "91a9c5550885718b829c0868d8c1628c94a03e317d2e74fedf732406a1ec7824"
       }
     }
   ],
@@ -140,434 +153,503 @@
     {
       "markdown": "source/01_用户操作说明书.md",
       "target": "../assets/14_audit.png"
+    },
+    {
+      "markdown": "source/02_软件设计说明书.md",
+      "target": "../assets/16_workflow.png"
+    },
+    {
+      "markdown": "source/02_软件设计说明书.md",
+      "target": "../assets/15_architecture.png"
     }
   ],
   "source_pdf_pages": [
     {
       "submission_page": 1,
       "full_layout_page": 1,
-      "display_rows": 55,
+      "display_rows": 60,
       "first_display_row": 1,
-      "last_display_row": 55
+      "last_display_row": 60,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 2,
       "full_layout_page": 2,
-      "display_rows": 55,
-      "first_display_row": 56,
-      "last_display_row": 110
+      "display_rows": 60,
+      "first_display_row": 61,
+      "last_display_row": 120,
+      "distinct_nonempty_source_lines": 53
     },
     {
       "submission_page": 3,
       "full_layout_page": 3,
-      "display_rows": 55,
-      "first_display_row": 111,
-      "last_display_row": 165
+      "display_rows": 60,
+      "first_display_row": 121,
+      "last_display_row": 180,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 4,
       "full_layout_page": 4,
-      "display_rows": 55,
-      "first_display_row": 166,
-      "last_display_row": 220
+      "display_rows": 60,
+      "first_display_row": 181,
+      "last_display_row": 240,
+      "distinct_nonempty_source_lines": 48
     },
     {
       "submission_page": 5,
       "full_layout_page": 5,
-      "display_rows": 55,
-      "first_display_row": 221,
-      "last_display_row": 275
+      "display_rows": 60,
+      "first_display_row": 241,
+      "last_display_row": 300,
+      "distinct_nonempty_source_lines": 46
     },
     {
       "submission_page": 6,
       "full_layout_page": 6,
-      "display_rows": 55,
-      "first_display_row": 276,
-      "last_display_row": 330
+      "display_rows": 60,
+      "first_display_row": 301,
+      "last_display_row": 360,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 7,
       "full_layout_page": 7,
-      "display_rows": 55,
-      "first_display_row": 331,
-      "last_display_row": 385
+      "display_rows": 60,
+      "first_display_row": 361,
+      "last_display_row": 420,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 8,
       "full_layout_page": 8,
-      "display_rows": 55,
-      "first_display_row": 386,
-      "last_display_row": 440
+      "display_rows": 60,
+      "first_display_row": 421,
+      "last_display_row": 480,
+      "distinct_nonempty_source_lines": 47
     },
     {
       "submission_page": 9,
       "full_layout_page": 9,
-      "display_rows": 55,
-      "first_display_row": 441,
-      "last_display_row": 495
+      "display_rows": 60,
+      "first_display_row": 481,
+      "last_display_row": 540,
+      "distinct_nonempty_source_lines": 56
     },
     {
       "submission_page": 10,
       "full_layout_page": 10,
-      "display_rows": 55,
-      "first_display_row": 496,
-      "last_display_row": 550
+      "display_rows": 60,
+      "first_display_row": 541,
+      "last_display_row": 600,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 11,
       "full_layout_page": 11,
-      "display_rows": 55,
-      "first_display_row": 551,
-      "last_display_row": 605
+      "display_rows": 60,
+      "first_display_row": 601,
+      "last_display_row": 660,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 12,
       "full_layout_page": 12,
-      "display_rows": 55,
-      "first_display_row": 606,
-      "last_display_row": 660
+      "display_rows": 60,
+      "first_display_row": 661,
+      "last_display_row": 720,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 13,
       "full_layout_page": 13,
-      "display_rows": 55,
-      "first_display_row": 661,
-      "last_display_row": 715
+      "display_rows": 60,
+      "first_display_row": 721,
+      "last_display_row": 780,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 14,
       "full_layout_page": 14,
-      "display_rows": 55,
-      "first_display_row": 716,
-      "last_display_row": 770
+      "display_rows": 60,
+      "first_display_row": 781,
+      "last_display_row": 840,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 15,
       "full_layout_page": 15,
-      "display_rows": 55,
-      "first_display_row": 771,
-      "last_display_row": 825
+      "display_rows": 60,
+      "first_display_row": 841,
+      "last_display_row": 900,
+      "distinct_nonempty_source_lines": 58
     },
     {
       "submission_page": 16,
       "full_layout_page": 16,
-      "display_rows": 55,
-      "first_display_row": 826,
-      "last_display_row": 880
+      "display_rows": 60,
+      "first_display_row": 901,
+      "last_display_row": 960,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 17,
       "full_layout_page": 17,
-      "display_rows": 55,
-      "first_display_row": 881,
-      "last_display_row": 935
+      "display_rows": 60,
+      "first_display_row": 961,
+      "last_display_row": 1020,
+      "distinct_nonempty_source_lines": 54
     },
     {
       "submission_page": 18,
       "full_layout_page": 18,
-      "display_rows": 55,
-      "first_display_row": 936,
-      "last_display_row": 990
+      "display_rows": 60,
+      "first_display_row": 1021,
+      "last_display_row": 1080,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 19,
       "full_layout_page": 19,
-      "display_rows": 55,
-      "first_display_row": 991,
-      "last_display_row": 1045
+      "display_rows": 60,
+      "first_display_row": 1081,
+      "last_display_row": 1140,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 20,
       "full_layout_page": 20,
-      "display_rows": 55,
-      "first_display_row": 1046,
-      "last_display_row": 1100
+      "display_rows": 60,
+      "first_display_row": 1141,
+      "last_display_row": 1200,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 21,
       "full_layout_page": 21,
-      "display_rows": 55,
-      "first_display_row": 1101,
-      "last_display_row": 1155
+      "display_rows": 60,
+      "first_display_row": 1201,
+      "last_display_row": 1260,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 22,
       "full_layout_page": 22,
-      "display_rows": 55,
-      "first_display_row": 1156,
-      "last_display_row": 1210
+      "display_rows": 60,
+      "first_display_row": 1261,
+      "last_display_row": 1320,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 23,
       "full_layout_page": 23,
-      "display_rows": 55,
-      "first_display_row": 1211,
-      "last_display_row": 1265
+      "display_rows": 60,
+      "first_display_row": 1321,
+      "last_display_row": 1380,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 24,
       "full_layout_page": 24,
-      "display_rows": 55,
-      "first_display_row": 1266,
-      "last_display_row": 1320
+      "display_rows": 60,
+      "first_display_row": 1381,
+      "last_display_row": 1440,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 25,
       "full_layout_page": 25,
-      "display_rows": 55,
-      "first_display_row": 1321,
-      "last_display_row": 1375
+      "display_rows": 60,
+      "first_display_row": 1441,
+      "last_display_row": 1500,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 26,
       "full_layout_page": 26,
-      "display_rows": 55,
-      "first_display_row": 1376,
-      "last_display_row": 1430
+      "display_rows": 60,
+      "first_display_row": 1501,
+      "last_display_row": 1560,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 27,
       "full_layout_page": 27,
-      "display_rows": 55,
-      "first_display_row": 1431,
-      "last_display_row": 1485
+      "display_rows": 60,
+      "first_display_row": 1561,
+      "last_display_row": 1620,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 28,
       "full_layout_page": 28,
-      "display_rows": 55,
-      "first_display_row": 1486,
-      "last_display_row": 1540
+      "display_rows": 60,
+      "first_display_row": 1621,
+      "last_display_row": 1680,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 29,
       "full_layout_page": 29,
-      "display_rows": 55,
-      "first_display_row": 1541,
-      "last_display_row": 1595
+      "display_rows": 60,
+      "first_display_row": 1681,
+      "last_display_row": 1740,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 30,
       "full_layout_page": 30,
-      "display_rows": 55,
-      "first_display_row": 1596,
-      "last_display_row": 1650
+      "display_rows": 60,
+      "first_display_row": 1741,
+      "last_display_row": 1800,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 31,
-      "full_layout_page": 53,
-      "display_rows": 55,
-      "first_display_row": 2861,
-      "last_display_row": 2915
+      "full_layout_page": 46,
+      "display_rows": 60,
+      "first_display_row": 2701,
+      "last_display_row": 2760,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 32,
-      "full_layout_page": 54,
-      "display_rows": 55,
-      "first_display_row": 2916,
-      "last_display_row": 2970
+      "full_layout_page": 47,
+      "display_rows": 60,
+      "first_display_row": 2761,
+      "last_display_row": 2820,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 33,
-      "full_layout_page": 55,
-      "display_rows": 55,
-      "first_display_row": 2971,
-      "last_display_row": 3025
+      "full_layout_page": 48,
+      "display_rows": 60,
+      "first_display_row": 2821,
+      "last_display_row": 2880,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 34,
-      "full_layout_page": 56,
-      "display_rows": 55,
-      "first_display_row": 3026,
-      "last_display_row": 3080
+      "full_layout_page": 49,
+      "display_rows": 60,
+      "first_display_row": 2881,
+      "last_display_row": 2940,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 35,
-      "full_layout_page": 57,
-      "display_rows": 55,
-      "first_display_row": 3081,
-      "last_display_row": 3135
+      "full_layout_page": 50,
+      "display_rows": 60,
+      "first_display_row": 2941,
+      "last_display_row": 3000,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 36,
-      "full_layout_page": 58,
-      "display_rows": 55,
-      "first_display_row": 3136,
-      "last_display_row": 3190
+      "full_layout_page": 51,
+      "display_rows": 60,
+      "first_display_row": 3001,
+      "last_display_row": 3060,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 37,
-      "full_layout_page": 59,
-      "display_rows": 55,
-      "first_display_row": 3191,
-      "last_display_row": 3245
+      "full_layout_page": 52,
+      "display_rows": 60,
+      "first_display_row": 3061,
+      "last_display_row": 3120,
+      "distinct_nonempty_source_lines": 57
     },
     {
       "submission_page": 38,
-      "full_layout_page": 60,
-      "display_rows": 55,
-      "first_display_row": 3246,
-      "last_display_row": 3300
+      "full_layout_page": 53,
+      "display_rows": 60,
+      "first_display_row": 3121,
+      "last_display_row": 3180,
+      "distinct_nonempty_source_lines": 53
     },
     {
       "submission_page": 39,
-      "full_layout_page": 61,
-      "display_rows": 55,
-      "first_display_row": 3301,
-      "last_display_row": 3355
+      "full_layout_page": 54,
+      "display_rows": 60,
+      "first_display_row": 3181,
+      "last_display_row": 3240,
+      "distinct_nonempty_source_lines": 56
     },
     {
       "submission_page": 40,
-      "full_layout_page": 62,
-      "display_rows": 55,
-      "first_display_row": 3356,
-      "last_display_row": 3410
+      "full_layout_page": 55,
+      "display_rows": 60,
+      "first_display_row": 3241,
+      "last_display_row": 3300,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 41,
-      "full_layout_page": 63,
-      "display_rows": 55,
-      "first_display_row": 3411,
-      "last_display_row": 3465
+      "full_layout_page": 56,
+      "display_rows": 60,
+      "first_display_row": 3301,
+      "last_display_row": 3360,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 42,
-      "full_layout_page": 64,
-      "display_rows": 55,
-      "first_display_row": 3466,
-      "last_display_row": 3520
+      "full_layout_page": 57,
+      "display_rows": 60,
+      "first_display_row": 3361,
+      "last_display_row": 3420,
+      "distinct_nonempty_source_lines": 55
     },
     {
       "submission_page": 43,
-      "full_layout_page": 65,
-      "display_rows": 55,
-      "first_display_row": 3521,
-      "last_display_row": 3575
+      "full_layout_page": 58,
+      "display_rows": 60,
+      "first_display_row": 3421,
+      "last_display_row": 3480,
+      "distinct_nonempty_source_lines": 36
     },
     {
       "submission_page": 44,
-      "full_layout_page": 66,
-      "display_rows": 55,
-      "first_display_row": 3576,
-      "last_display_row": 3630
+      "full_layout_page": 59,
+      "display_rows": 60,
+      "first_display_row": 3481,
+      "last_display_row": 3540,
+      "distinct_nonempty_source_lines": 45
     },
     {
       "submission_page": 45,
-      "full_layout_page": 67,
-      "display_rows": 55,
-      "first_display_row": 3631,
-      "last_display_row": 3685
+      "full_layout_page": 60,
+      "display_rows": 60,
+      "first_display_row": 3541,
+      "last_display_row": 3600,
+      "distinct_nonempty_source_lines": 30
     },
     {
       "submission_page": 46,
-      "full_layout_page": 68,
-      "display_rows": 55,
-      "first_display_row": 3686,
-      "last_display_row": 3740
+      "full_layout_page": 61,
+      "display_rows": 60,
+      "first_display_row": 3601,
+      "last_display_row": 3660,
+      "distinct_nonempty_source_lines": 35
     },
     {
       "submission_page": 47,
-      "full_layout_page": 69,
-      "display_rows": 55,
-      "first_display_row": 3741,
-      "last_display_row": 3795
+      "full_layout_page": 62,
+      "display_rows": 60,
+      "first_display_row": 3661,
+      "last_display_row": 3720,
+      "distinct_nonempty_source_lines": 52
     },
     {
       "submission_page": 48,
-      "full_layout_page": 70,
-      "display_rows": 55,
-      "first_display_row": 3796,
-      "last_display_row": 3850
+      "full_layout_page": 63,
+      "display_rows": 60,
+      "first_display_row": 3721,
+      "last_display_row": 3780,
+      "distinct_nonempty_source_lines": 29
     },
     {
       "submission_page": 49,
-      "full_layout_page": 71,
-      "display_rows": 55,
-      "first_display_row": 3851,
-      "last_display_row": 3905
+      "full_layout_page": 64,
+      "display_rows": 60,
+      "first_display_row": 3781,
+      "last_display_row": 3840,
+      "distinct_nonempty_source_lines": 21
     },
     {
       "submission_page": 50,
-      "full_layout_page": 72,
-      "display_rows": 55,
-      "first_display_row": 3906,
-      "last_display_row": 3960
+      "full_layout_page": 65,
+      "display_rows": 60,
+      "first_display_row": 3841,
+      "last_display_row": 3900,
+      "distinct_nonempty_source_lines": 21
     },
     {
       "submission_page": 51,
-      "full_layout_page": 73,
-      "display_rows": 55,
-      "first_display_row": 3961,
-      "last_display_row": 4015
+      "full_layout_page": 66,
+      "display_rows": 60,
+      "first_display_row": 3901,
+      "last_display_row": 3960,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 52,
-      "full_layout_page": 74,
-      "display_rows": 55,
-      "first_display_row": 4016,
-      "last_display_row": 4070
+      "full_layout_page": 67,
+      "display_rows": 60,
+      "first_display_row": 3961,
+      "last_display_row": 4020,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 53,
-      "full_layout_page": 75,
-      "display_rows": 55,
-      "first_display_row": 4071,
-      "last_display_row": 4125
+      "full_layout_page": 68,
+      "display_rows": 60,
+      "first_display_row": 4021,
+      "last_display_row": 4080,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 54,
-      "full_layout_page": 76,
-      "display_rows": 55,
-      "first_display_row": 4126,
-      "last_display_row": 4180
+      "full_layout_page": 69,
+      "display_rows": 60,
+      "first_display_row": 4081,
+      "last_display_row": 4140,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 55,
-      "full_layout_page": 77,
-      "display_rows": 55,
-      "first_display_row": 4181,
-      "last_display_row": 4235
+      "full_layout_page": 70,
+      "display_rows": 60,
+      "first_display_row": 4141,
+      "last_display_row": 4200,
+      "distinct_nonempty_source_lines": 60
     },
     {
       "submission_page": 56,
-      "full_layout_page": 78,
-      "display_rows": 55,
-      "first_display_row": 4236,
-      "last_display_row": 4290
+      "full_layout_page": 71,
+      "display_rows": 60,
+      "first_display_row": 4201,
+      "last_display_row": 4260,
+      "distinct_nonempty_source_lines": 59
     },
     {
       "submission_page": 57,
-      "full_layout_page": 79,
-      "display_rows": 55,
-      "first_display_row": 4291,
-      "last_display_row": 4345
+      "full_layout_page": 72,
+      "display_rows": 60,
+      "first_display_row": 4261,
+      "last_display_row": 4320,
+      "distinct_nonempty_source_lines": 49
     },
     {
       "submission_page": 58,
-      "full_layout_page": 80,
-      "display_rows": 55,
-      "first_display_row": 4346,
-      "last_display_row": 4400
+      "full_layout_page": 73,
+      "display_rows": 60,
+      "first_display_row": 4321,
+      "last_display_row": 4380,
+      "distinct_nonempty_source_lines": 25
     },
     {
       "submission_page": 59,
-      "full_layout_page": 81,
-      "display_rows": 55,
-      "first_display_row": 4401,
-      "last_display_row": 4455
+      "full_layout_page": 74,
+      "display_rows": 60,
+      "first_display_row": 4381,
+      "last_display_row": 4440,
+      "distinct_nonempty_source_lines": 45
     },
     {
       "submission_page": 60,
-      "full_layout_page": 82,
-      "display_rows": 35,
-      "first_display_row": 4456,
-      "last_display_row": 4490
+      "full_layout_page": 75,
+      "display_rows": 50,
+      "first_display_row": 4441,
+      "last_display_row": 4490,
+      "distinct_nonempty_source_lines": 50
     }
   ],
   "checks": {
-    "word_pdf_pairs": 6,
+    "word_pdf_pairs": 7,
     "images_exist": true,
     "pdf_replacement_characters": 0,
     "source_page_and_line_numbers_match": true
-  }
+  },
+  "scope": "仅核验文件结构、PDF文字与显示序号，不代表登记机构已认可排版、计行口径或权属。"
 }

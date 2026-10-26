@@ -1,0 +1,30 @@
+digraph Workflow {
+  graph [rankdir=TB, bgcolor="white", pad="0.18", nodesep="0.65", ranksep="0.48", splines=polyline, dpi=180, fontname="Noto Sans CJK SC"];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=13, color="#47736B", fillcolor="#F1F6F3", fontcolor="#173F3C", margin="0.18,0.12", penwidth=1.2];
+  edge [color="#62847C", arrowsize=0.65, penwidth=1.15, fontname="Noto Sans CJK SC", fontsize=10, fontcolor="#47665F"];
+
+  archive [label="建立药品档案"];
+  import [label="导入旧版与新版\n填写日期及来源"];
+  check [label="核查原文和章节\n必要时人工校正"];
+  {rank=same; archive; import; check;}
+  archive -> import;
+  import -> check;
+
+  comparison [label="创建比对并保存差异\n校验药品、版本与日期\n参与版本的章节由此锁定", fillcolor="#DFEEE7", width=3.3];
+  check -> comparison;
+  pending [label="待复核\n新生成差异的初始状态", fillcolor="#FFF4DC"];
+  comparison -> pending;
+  confirmed [label="已确认\n核对变化并记录意见", fillcolor="#E3F0E7"];
+  ignored [label="已忽略\n必须填写忽略原因", fillcolor="#EDEFEF"];
+  {rank=same; confirmed; pending; ignored;}
+  confirmed -> pending -> ignored [style=invis, weight=100];
+  pending:w -> confirmed:e [label="确认／重置", dir=both, constraint=false];
+  pending:e -> ignored:w [label="忽略／重置", dir=both, constraint=false];
+
+  export [label="导出当前状态报告\nHTML / CSV / JSON\n仍有待复核项时也可导出", fillcolor="#DFEEE7", width=3.3];
+  pending -> export [style=dashed];
+  confirmed -> export [style=dashed];
+  ignored -> export [style=dashed];
+  note [shape=plain, style="", label="图示常用流转：确认与忽略也可相互调整，均可重置为待复核。\n虚线表示按当前状态导出；无差异任务没有待复核项。\n已引用版本如需纠正，应另行导入新版本。", fontsize=10, fontcolor="#526763"];
+  export -> note [style=invis];
+}

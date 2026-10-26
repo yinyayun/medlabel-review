@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STEMS = (
     '01_用户操作说明书', '02_软件设计说明书', '03_登记申请信息草稿',
     '04_提交材料核对单', '05_源程序鉴别材料', '06_源程序编排说明',
+    '07_内容审查与提交待办',
 )
 
 
@@ -72,6 +73,11 @@ def verify(base: Path) -> dict:
         for number, text in enumerate(texts, 1):
             require('\ufffd' not in text, f'PDF 含替换字符：{pdf.name}，第 {number} 页')
             require(bool(text.strip()), f'PDF 含空白或无法提取文字的页面：{pdf.name}，第 {number} 页')
+            require(bool(re.search(rf'第\s*{number}\s*页\s*/\s*共\s*{len(texts)}\s*页', text)),
+                    f'PDF 页脚页码错误：{pdf.name}，第 {number} 页')
+            box = reader.pages[number - 1].mediabox
+            require(abs(float(box.width) - 595.28) < 2 and abs(float(box.height) - 841.89) < 2,
+                    f'PDF 页面不是纵向 A4：{pdf.name}，第 {number} 页')
         if stem.startswith('05_'):
             require(len(texts) == source['submitted_pages'], '源程序 PDF 页数与清单不一致')
             for number, (text, page) in enumerate(zip(texts, source['pages']), 1):
@@ -82,10 +88,16 @@ def verify(base: Path) -> dict:
                 require(len(actual) == page['display_rows'] and actual == expected,
                         f'源程序 PDF 第 {number} 页显示行号不符：实际 {len(actual)} 行，'
                         f'清单 {page["display_rows"]} 行，预期行号 {first}—{last}')
-                require(page['display_rows'] == (35 if number == 60 else 55),
-                        f'源程序清单第 {number} 页不是预期的 55 行（末页 35 行）')
+                expected_rows = min(source['display_rows_per_full_page'],
+                                    source['total_display_rows'] -
+                                    (page['full_layout_page'] - 1) * source['display_rows_per_full_page'])
+                require(page['display_rows'] == expected_rows and page['display_rows'] >= 50,
+                        f'源程序清单第 {number} 页的显示行数与全量编排不符或少于50')
+                require(bool(re.search(r'(?m)^\d{5}[ \t]+\d{4}[ +]', text)),
+                        f'源程序 PDF 第 {number} 页缺少原始行号')
                 code_pages.append({'submission_page': number, 'full_layout_page': page['full_layout_page'],
-                                   'display_rows': len(actual), 'first_display_row': first, 'last_display_row': last})
+                                   'display_rows': len(actual), 'first_display_row': first, 'last_display_row': last,
+                                   'distinct_nonempty_source_lines': page['distinct_nonempty_source_lines']})
         documents.append({'document': stem, 'pages': len(texts), 'characters': sum(map(len, texts)),
                           'word': {'path': str(word.relative_to(base)), 'sha256': sha256(word)},
                           'pdf': {'path': str(pdf.relative_to(base)), 'sha256': sha256(pdf)}})
@@ -94,7 +106,8 @@ def verify(base: Path) -> dict:
             'source_manifest_sha256': sha256(source_path), 'documents': documents,
             'markdown_image_references': images, 'source_pdf_pages': code_pages,
             'checks': {'word_pdf_pairs': len(documents), 'images_exist': True,
-                       'pdf_replacement_characters': 0, 'source_page_and_line_numbers_match': True}}
+                       'pdf_replacement_characters': 0, 'source_page_and_line_numbers_match': True},
+            'scope': '仅核验文件结构、PDF文字与显示序号，不代表登记机构已认可排版、计行口径或权属。'}
 
 
 def main() -> int:

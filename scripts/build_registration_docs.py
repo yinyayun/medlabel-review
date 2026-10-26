@@ -28,6 +28,7 @@ OUT = BASE / 'word'
 NAME = '药品说明书版本比对与变更审核系统'
 VERSION = 'V1.0'
 COMMIT = '98e406f93f8777fc416014cee05d1737966fab4e'
+SOURCE_ROWS_PER_PAGE = 60
 FILES = ['run.py', 'app/__init__.py', 'app/main.py', 'app/database.py',
          'app/documents.py', 'app/comparison.py', 'app/static/styles.css',
          'app/static/index.html', 'app/static/app.js', 'app/reports.py', 'app/demo.py']
@@ -96,6 +97,13 @@ def setup(title, code=False):
     return doc
 
 
+def soft_breaks(text):
+    """Keep long file/test identifiers readable inside narrow table cells."""
+    return re.sub(r'[A-Za-z][A-Za-z0-9_./]{34,}',
+                  lambda match: re.sub(r'([_/\.])', lambda part: part.group(1) + '\u200b', match.group()),
+                  text)
+
+
 def inline(paragraph, text, size=10.5):
     tokens = re.split(r'(\*\*.*?\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))', text)
     for token in tokens:
@@ -104,7 +112,7 @@ def inline(paragraph, text, size=10.5):
         if token.startswith('**') and token.endswith('**'):
             font(paragraph.add_run(token[2:-2]), size, bold=True)
         elif token.startswith('`') and token.endswith('`'):
-            font(paragraph.add_run(token[1:-1]), size - .5, mono=True)
+            font(paragraph.add_run(soft_breaks(token[1:-1])), size - .5, mono=True)
         elif re.match(r'^\[[^\]]+\]\(', token):
             label, url = re.match(r'^\[([^\]]+)\]\(([^)]+)\)$', token).groups()
             font(paragraph.add_run(label), size, color='176B60')
@@ -113,27 +121,22 @@ def inline(paragraph, text, size=10.5):
                 # table content outside the page.
                 font(paragraph.add_run('（' + url.replace('/', '/\u200b') + '）'), 8.5)
         else:
-            font(paragraph.add_run(token.replace('\\|', '|')), size)
+            font(paragraph.add_run(soft_breaks(token.replace('\\|', '|'))), size)
 
 
 def cover(doc, title):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(70)
-    font(p.add_run('MEDLABEL REVIEW'), 12, bold=True, color='176B60')
-    p = doc.add_paragraph(NAME, 'Title')
-    p.paragraph_format.space_after = Pt(14)
+    p.paragraph_format.space_after = Pt(8)
+    p.paragraph_format.keep_with_next = True
+    font(p.add_run(f'{NAME} {VERSION}'), 16, bold=True, color='173F3C')
     p = doc.add_paragraph()
-    font(p.add_run(VERSION), 22, color='173F3C')
-    p.paragraph_format.space_after = Pt(34)
-    font(doc.add_paragraph().add_run(title), 19, bold=True, color='173F3C')
-    for text in ['著作权人：待申请人填写', '对应代码版本：98e406f', '文档状态：技术内容已编制，申请信息待确认']:
+    p.paragraph_format.keep_with_next = True
+    p.paragraph_format.space_after = Pt(9)
+    font(p.add_run(title), 15, bold=True, color='173F3C')
+    for text in ['著作权人：待申请人填写', '对应代码版本：98e406f；文档状态：技术内容已编制，申请信息待确认']:
         p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(12)
-        font(p.add_run(text), 11)
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(36)
-    font(p.add_run('本文所示药品、说明书及审核记录均为软件演示资料。'), 9, color='526763')
-    doc.add_page_break()
+        p.paragraph_format.space_after = Pt(5)
+        font(p.add_run(text), 9, color='526763')
 
 
 def add_table(doc, rows):
@@ -170,19 +173,6 @@ def markdown_doc(path):
     lines = path.read_text(encoding='utf-8').splitlines()
     doc = setup(title)
     cover(doc, title)
-    headings = [re.sub(r'^#{2,3}\s+', '', line) for line in lines
-                if re.match(r'^#{2,3}\s+\d', line)]
-    if len(headings) > 6:
-        doc.add_heading('内容索引', level=1)
-        # Use chapter-level headings; this index is intentionally not a
-        # fabricated page-number table of contents.
-        main_headings = [re.sub(r'^##\s+', '', line) for line in lines if re.match(r'^##\s+\d', line)]
-        if not main_headings:
-            main_headings = headings
-        for item in main_headings:
-            p = doc.add_paragraph(item)
-            p.paragraph_format.space_after = Pt(7)
-        doc.add_page_break()
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -292,7 +282,7 @@ def source_material():
                              'text': segment, 'display_row': len(rows) + 1})
         record['last_display_row'] = len(rows)
         files.append(record)
-    pages = [rows[i:i+55] for i in range(0, len(rows), 55)]
+    pages = [rows[i:i+SOURCE_ROWS_PER_PAGE] for i in range(0, len(rows), SOURCE_ROWS_PER_PAGE)]
     selected = list(range(len(pages))) if len(pages) <= 60 else list(range(30)) + list(range(len(pages)-30, len(pages)))
     doc = setup('源程序鉴别材料', code=True)
     source_map = []
@@ -306,23 +296,31 @@ def source_material():
         p.paragraph_format.line_spacing = Pt(10)
         font(p.add_run(f'源文件范围：{items[0]["path"]}:{items[0]["source_line"]} → '
                        f'{items[-1]["path"]}:{items[-1]["source_line"]}'), 7.5)
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(3)
+        p.paragraph_format.line_spacing = Pt(10)
+        font(p.add_run('左列为显示序号，次列为原始文件行号；+ 表示同一源行的续行。'), 7.5)
         for item in items:
             p = doc.add_paragraph()
             p.paragraph_format.space_before = p.paragraph_format.space_after = Pt(0)
             p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
             p.paragraph_format.line_spacing = Pt(10.5)
             p.paragraph_format.widow_control = False
-            font(p.add_run(f'{item["display_row"]:05d}  ' + item['text']), 8, mono=True)
+            continuation = '+' if item['continuation'] else ' '
+            prefix = f'{item["display_row"]:05d} {item["source_line"]:04d}{continuation} '
+            font(p.add_run(prefix + item['text']), 8.5, mono=True)
         source_map.append({'submission_page': submission_page, 'full_layout_page': page_index + 1,
                            'first': {k:v for k,v in items[0].items() if k != 'text'},
-                           'last': {k:v for k,v in items[-1].items() if k != 'text'}, 'display_rows': len(items)})
+                           'last': {k:v for k,v in items[-1].items() if k != 'text'}, 'display_rows': len(items),
+                           'distinct_nonempty_source_lines': len({(x['path'], x['source_line']) for x in items})})
     OUT.mkdir(parents=True, exist_ok=True)
     doc.save(OUT / '05_源程序鉴别材料.docx')
     manifest = {'software': NAME, 'version': VERSION, 'baseline_commit': COMMIT,
                 'files': files, 'total_physical_lines_including_blank': raw_count,
                 'total_nonempty_source_lines': nonempty_count, 'total_display_rows': len(rows),
                 'full_layout_pages': len(pages), 'submitted_pages': len(selected),
-                'page_policy': '每页55个显示行；保留实际代码，省略纯空白行并对长行折行。全量编排超过60页时取前30页、后30页。末页按实际内容保留。',
+                'display_rows_per_full_page': SOURCE_ROWS_PER_PAGE,
+                'page_policy': '每页60个显示行，末页50行；保留实际代码，省略纯空白行并对长行折行。全量75页，取前30页、后30页。显示行与原始源行分别标识，折行不计为新增源程序量。',
                 'pages': source_map}
     (BASE / 'source_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n',encoding='utf-8')
     (BASE / '完整源程序汇编.txt').write_text('\n'.join(originals),encoding='utf-8')

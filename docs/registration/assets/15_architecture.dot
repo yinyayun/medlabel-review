@@ -1,0 +1,41 @@
+digraph Architecture {
+  graph [rankdir=TB, bgcolor="white", pad="0.18", nodesep="0.22", ranksep="0.42", splines=polyline, dpi=180, fontname="Noto Sans CJK SC"];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=13, color="#47736B", fillcolor="#F1F6F3", fontcolor="#173F3C", margin="0.16,0.12", penwidth=1.2];
+  edge [color="#62847C", arrowsize=0.65, penwidth=1.15, fontname="Noto Sans CJK SC", fontsize=10, fontcolor="#47665F"];
+
+  browser [label="本地浏览器界面\n工作台 · 药品与版本 · 比对与审核 · 操作记录", fillcolor="#DFEEE7", width=5.5];
+  api [label="FastAPI 接口与业务编排\n输入校验 · 本地主机与同源限制\napp/main.py", fillcolor="#DFEEE7", width=4.5];
+  browser -> api [label="本机 HTTP / JSON / 文件下载"];
+
+  subgraph cluster_modules {
+    label="";
+    fontname="Noto Sans CJK SC"; fontsize=12; fontcolor="#47665F";
+    color="#B6CCC3"; style="rounded"; margin=16;
+    parse [label="文档提取与章节整理\nPDF / DOCX / TXT\n自动识别＋人工校正"];
+    compare [label="章节与字符比对\n标题对齐 / 重复项配对\n数字、单位及重点提示"];
+    review [label="人工审核更新\n待复核 / 确认 / 忽略\n修订号冲突校验"];
+    report [label="报告生成\nHTML / CSV / JSON\n来源与当前审核状态"];
+    {rank=same; parse; compare; review; report;}
+  }
+  api -> parse;
+  api -> compare;
+  api -> review;
+  api -> report;
+
+  subgraph cluster_storage {
+    label="";
+    fontname="Noto Sans CJK SC"; fontsize=12; fontcolor="#47665F";
+    color="#B6CCC3"; style="rounded"; margin=16;
+    files [shape=folder, label="uploads 附件目录\n保存导入的原始文件\n与数据库中的版本记录关联", width=3.15];
+    database [shape=cylinder, label="SQLite 数据库\n药品、版本、比对、差异、设置、操作记录\n版本记录含来源与 SHA-256\n业务写入与操作记录在同一事务提交", width=4.3];
+    {rank=same; files; database;}
+  }
+  parse -> files [label="保留原始资料"];
+  parse -> database [label="版本与章节"];
+  compare -> database [label="保存比对结果"];
+  review -> database [label="保存状态、意见与记录"];
+  report -> database [label="读取当前结果", dir=back, style=dashed];
+  note [shape=plain, style="", label="各功能由接口层协调；图示数据库读写均经接口层编排，附件与数据库保存于本机。", fontsize=10, fontcolor="#526763"];
+  database -> note [style=invis];
+  files -> note [style=invis];
+}
